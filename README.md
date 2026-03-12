@@ -1,16 +1,75 @@
-# React + Vite
+# Auto Video AI (React + Vite)
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+This app generates scene plans and records short videos from a topic prompt.
 
-Currently, two official plugins are available:
+## Setup
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+1. Install dependencies:
 
-## React Compiler
+```bash
+npm install
+```
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+2. Create `.env` file in project root and add one of these keys:
 
-## Expanding the ESLint configuration
+```bash
+VITE_OPENROUTER_API_KEY=your_openrouter_key
+# optional fallback
+VITE_ANTHROPIC_API_KEY=your_openrouter_key
+```
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+3. Start dev server:
+
+```bash
+npm run dev
+```
+
+## Verify locally
+
+```bash
+npm run lint
+npm run build
+```
+
+## GitHub merge conflict fix (quick steps)
+
+If GitHub shows **"This branch has conflicts"**, run these commands locally on your feature branch:
+
+```bash
+git fetch origin
+git checkout <your-branch>
+git rebase origin/main
+# resolve conflicts in files
+# then:
+git add <resolved-files>
+git rebase --continue
+git push --force-with-lease
+```
+
+Alternative (without rebase):
+
+```bash
+git fetch origin
+git checkout <your-branch>
+git merge origin/main
+# resolve conflicts
+git add <resolved-files>
+git commit
+git push
+```
+
+## Troubleshooting
+
+### ESLint: `'error' is not defined` in `src/App.jsx`
+
+If your local branch still shows this error, you are likely on an older commit.
+
+```bash
+git fetch origin
+git checkout <your-branch>
+git pull --rebase
+npm install
+npm run lint
+```
+
+Also ensure the catch block uses `catch (err)` and references `err` (not `error`) in `src/App.jsx`.
