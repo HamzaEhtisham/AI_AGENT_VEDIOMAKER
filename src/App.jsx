@@ -279,8 +279,7 @@ Rules:
       scenes = Array.isArray(parsed?.scenes) ? parsed.scenes : [];
       title = parsed?.title || topic;
       scenes.forEach(s => { s.videoTitle = title; });
-    } catch (error) {
-      console.error("Scene generation failed", error);
+    } catch {
       setPhase("error");
       addStatus(`❌ AI error: ${error?.message || "Dobara try karo."}`);
       return;
