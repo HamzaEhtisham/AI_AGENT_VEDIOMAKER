@@ -263,7 +263,13 @@ Rules:
       });
 
       const data = await res.json();
-      if (!res.ok) throw new Error(data?.error?.message || `OpenRouter request failed (${res.status})`);
+      if (!res.ok) {
+        const apiError = data?.error?.message || `OpenRouter request failed (${res.status})`;
+        if (res.status === 401) {
+          throw new Error("401 Unauthorized: API key invalid/missing. .env me VITE_OPENROUTER_API_KEY set karo.");
+        }
+        throw new Error(apiError);
+      }
 
       const content = data?.choices?.[0]?.message?.content ?? data?.content;
       const raw = Array.isArray(content)
@@ -279,9 +285,11 @@ Rules:
       scenes = Array.isArray(parsed?.scenes) ? parsed.scenes : [];
       title = parsed?.title || topic;
       scenes.forEach(s => { s.videoTitle = title; });
-    } catch {
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Dobara try karo.";
+      console.error("Scene generation failed", err);
       setPhase("error");
-      addStatus(`❌ AI error: ${error?.message || "Dobara try karo."}`);
+      addStatus(`❌ AI error: ${msg}`);
       return;
     }
 

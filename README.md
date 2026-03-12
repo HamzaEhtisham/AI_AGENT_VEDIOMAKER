@@ -57,3 +57,19 @@ git add <resolved-files>
 git commit
 git push
 ```
+
+## Troubleshooting
+
+### ESLint: `'error' is not defined` in `src/App.jsx`
+
+If your local branch still shows this error, you are likely on an older commit.
+
+```bash
+git fetch origin
+git checkout <your-branch>
+git pull --rebase
+npm install
+npm run lint
+```
+
+Also ensure the catch block uses `catch (err)` and references `err` (not `error`) in `src/App.jsx`.
