@@ -244,30 +244,44 @@ Rules:
     let scenes = [], title = "";
 
     try {
+      const apiKey = import.meta.env.VITE_OPENROUTER_API_KEY || import.meta.env.VITE_ANTHROPIC_API_KEY;
+      if (!apiKey) throw new Error("API key missing. Set VITE_OPENROUTER_API_KEY in .env");
+
       const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${import.meta.env.VITE_ANTHROPIC_API_KEY}`, // OpenRouter API Key
-          "HTTP-Referer": window.location.hostname, // Optional: OpenRouter requires a referer or origin header
-          "X-Title": "Auto Video AI", // Optional: Identifies your application
+          "Authorization": `Bearer ${apiKey}`,
+          "HTTP-Referer": window.location.origin,
+          "X-Title": "Auto Video AI",
         },
         body: JSON.stringify({
-          model: "anthropic/claude-3-sonnet", // Reverted to Claude 3 Sonnet model for testing OpenRouter API key validity
+          model: "anthropic/claude-3-sonnet",
           max_tokens: 4000,
           messages: [{ role: "user", content: prompt }],
         }),
       });
+
       const data = await res.json();
-      const raw = data.content?.map(b => b.text || "").join("") || "";
+      if (!res.ok) throw new Error(data?.error?.message || `OpenRouter request failed (${res.status})`);
+
+      const content = data?.choices?.[0]?.message?.content ?? data?.content;
+      const raw = Array.isArray(content)
+        ? content.map(block => block?.text || block?.content || "").join("")
+        : (typeof content === "string" ? content : "");
+
+      if (!raw.trim()) throw new Error("AI response empty tha");
+
       const clean = raw.replace(/```json\n?|```/g, "").trim();
-      const parsed = JSON.parse(clean);
-      scenes = parsed.scenes || [];
-      title = parsed.title || topic;
+      const jsonText = clean.match(/\{[\s\S]*\}/)?.[0] || clean;
+      const parsed = JSON.parse(jsonText);
+
+      scenes = Array.isArray(parsed?.scenes) ? parsed.scenes : [];
+      title = parsed?.title || topic;
       scenes.forEach(s => { s.videoTitle = title; });
     } catch {
       setPhase("error");
-      addStatus("❌ AI error. Dobara try karo.");
+      addStatus(`❌ AI error: ${error?.message || "Dobara try karo."}`);
       return;
     }
 
