@@ -265,7 +265,7 @@ Rules:
       scenes = parsed.scenes || [];
       title = parsed.title || topic;
       scenes.forEach(s => { s.videoTitle = title; });
-    } catch (e) {
+    } catch {
       setPhase("error");
       addStatus("❌ AI error. Dobara try karo.");
       return;
@@ -293,7 +293,7 @@ Rules:
       recRef.current = rec;
       rec.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
       rec.start(100);
-    } catch (e) { addStatus("⚠️ Recording supported nahi. Preview mode."); }
+    } catch { addStatus("⚠️ Recording supported nahi. Preview mode."); }
 
     const totalDur = scenes.reduce((s, sc) => s + (sc.duration || 9), 0);
     let elapsed = 0;
@@ -311,7 +311,7 @@ Rules:
         const sceneStart = Date.now();
         const animate = () => {
           if (stopRef.current) { resolve(); return; }
-          const now = Date.Now();
+          const now = Date.now();
           const prog = Math.min(1, (now - sceneStart) / sceneDur);
           renderScene(ctx, scene, prog, paletteRef.current, i, scenes.length, selectedFmt, now);
           setProgress(Math.min(1, (elapsed + (now - sceneStart)) / (totalDur * 1000)));
@@ -347,7 +347,13 @@ Rules:
     stopRef.current = true;
     if (rafRef.current) cancelAnimationFrame(rafRef.current);
     if (window.speechSynthesis) window.speechSynthesis.cancel();
-    if (recRef.current?.state === "recording") try { recRef.current.stop(); } catch (e) {}
+    if (recRef.current?.state === "recording") {
+      try {
+        recRef.current.stop();
+      } catch {
+        // Ignore stop failures when recorder is already shutting down
+      }
+    }
     setPhase("idle");
     addStatus("⏹ Roka gaya.");
   };
