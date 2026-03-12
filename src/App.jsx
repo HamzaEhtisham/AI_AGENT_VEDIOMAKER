@@ -244,30 +244,96 @@ Rules:
     let scenes = [], title = "";
 
     try {
-      const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${import.meta.env.VITE_ANTHROPIC_API_KEY}`, // OpenRouter API Key
-          "HTTP-Referer": window.location.hostname, // Optional: OpenRouter requires a referer or origin header
-          "X-Title": "Auto Video AI", // Optional: Identifies your application
-        },
-        body: JSON.stringify({
-          model: "anthropic/claude-3-sonnet", // Reverted to Claude 3 Sonnet model for testing OpenRouter API key validity
-          max_tokens: 4000,
-          messages: [{ role: "user", content: prompt }],
-        }),
-      });
-      const data = await res.json();
-      const raw = data.content?.map(b => b.text || "").join("") || "";
+      const rawOpenRouterKey = import.meta.env.VITE_OPENROUTER_API_KEY || import.meta.env.VITE_OPENROUTER_KEY;
+      const rawAnthropicKey = import.meta.env.VITE_ANTHROPIC_API_KEY;
+      const apiKey = (rawOpenRouterKey || rawAnthropicKey || "").trim();
+      const keySource = rawOpenRouterKey ? "openrouter" : (rawAnthropicKey ? "anthropic" : "missing");
+
+      if (!apiKey) throw new Error("API key missing. .env me VITE_OPENROUTER_API_KEY set karo.");
+      if (keySource === "anthropic" && !apiKey.startsWith("sk-or-")) {
+        throw new Error("VITE_ANTHROPIC_API_KEY OpenRouter endpoint pe valid nahi hai. VITE_OPENROUTER_API_KEY use karo.");
+      }
+
+      const modelList = (import.meta.env.VITE_OPENROUTER_MODELS || "")
+        .split(",")
+        .map(m => m.trim())
+        .filter(Boolean);
+      const fallbackModels = modelList.length
+        ? modelList
+        : [
+          "anthropic/claude-3.5-sonnet",
+          "anthropic/claude-3-haiku",
+          "openai/gpt-4o-mini",
+        ];
+
+      let data = null;
+      let lastError = "";
+
+      for (const modelName of fallbackModels) {
+        const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${apiKey}`,
+            "HTTP-Referer": window.location.origin,
+            "X-Title": "Auto Video AI",
+          },
+          body: JSON.stringify({
+            model: modelName,
+            max_tokens: 4000,
+            messages: [{ role: "user", content: prompt }],
+          }),
+        });
+
+        const body = await res.json();
+
+        if (res.ok) {
+          data = body;
+          break;
+        }
+
+        const apiError = body?.error?.message || `OpenRouter request failed (${res.status})`;
+        lastError = apiError;
+
+        if (res.status === 401) {
+          throw new Error("401 Unauthorized: key reject ho gayi. OpenRouter key (sk-or-v1...) check karo, credits/model access verify karo, then dev server restart karo.");
+        }
+
+        const isModelRouteIssue = apiError.toLowerCase().includes("no endpoints found")
+          || apiError.toLowerCase().includes("no provider")
+          || apiError.toLowerCase().includes("model");
+
+        if (!isModelRouteIssue) {
+          throw new Error(apiError);
+        }
+      }
+
+      if (!data) {
+        throw new Error(`AI model available nahi mila. ${lastError || "OpenRouter models access check karo."}`);
+      }
+
+      const content = data?.choices?.[0]?.message?.content ?? data?.content;
+      const raw = Array.isArray(content)
+        ? content.map(block => block?.text || block?.content || "").join("")
+        : (typeof content === "string" ? content : "");
+
+      if (!raw.trim()) throw new Error("AI response empty tha");
+
       const clean = raw.replace(/```json\n?|```/g, "").trim();
-      const parsed = JSON.parse(clean);
-      scenes = parsed.scenes || [];
-      title = parsed.title || topic;
+      const jsonText = clean.match(/\{[\s\S]*\}/)?.[0] || clean;
+      const parsed = JSON.parse(jsonText);
+
+      scenes = Array.isArray(parsed?.scenes) ? parsed.scenes : [];
+      title = parsed?.title || topic;
       scenes.forEach(s => { s.videoTitle = title; });
-    } catch (e) {
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Dobara try karo.";
+      const isAuthError = msg.includes("401 Unauthorized") || msg.includes("API key missing") || msg.includes("VITE_ANTHROPIC_API_KEY OpenRouter endpoint pe valid nahi hai");
+      if (isAuthError) console.warn("Scene generation auth/config issue", err);
+      else console.error("Scene generation failed", err);
       setPhase("error");
-      addStatus("❌ AI error. Dobara try karo.");
+      addStatus(`❌ AI error: ${msg}`);
+      if (isAuthError) addStatus("👉 .env me valid key daalo, phir dev server restart karke dobara try karo.");
       return;
     }
 
@@ -293,7 +359,7 @@ Rules:
       recRef.current = rec;
       rec.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
       rec.start(100);
-    } catch (e) { addStatus("⚠️ Recording supported nahi. Preview mode."); }
+    } catch { addStatus("⚠️ Recording supported nahi. Preview mode."); }
 
     const totalDur = scenes.reduce((s, sc) => s + (sc.duration || 9), 0);
     let elapsed = 0;
@@ -311,7 +377,7 @@ Rules:
         const sceneStart = Date.now();
         const animate = () => {
           if (stopRef.current) { resolve(); return; }
-          const now = Date.Now();
+          const now = Date.now();
           const prog = Math.min(1, (now - sceneStart) / sceneDur);
           renderScene(ctx, scene, prog, paletteRef.current, i, scenes.length, selectedFmt, now);
           setProgress(Math.min(1, (elapsed + (now - sceneStart)) / (totalDur * 1000)));
@@ -347,7 +413,13 @@ Rules:
     stopRef.current = true;
     if (rafRef.current) cancelAnimationFrame(rafRef.current);
     if (window.speechSynthesis) window.speechSynthesis.cancel();
-    if (recRef.current?.state === "recording") try { recRef.current.stop(); } catch (e) {}
+    if (recRef.current?.state === "recording") {
+      try {
+        recRef.current.stop();
+      } catch {
+        // Ignore stop failures when recorder is already shutting down
+      }
+    }
     setPhase("idle");
     addStatus("⏹ Roka gaya.");
   };
