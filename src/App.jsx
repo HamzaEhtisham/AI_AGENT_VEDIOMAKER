@@ -40,6 +40,19 @@ const VOICE_STYLES = [
 
 const CLAMP = (n, min, max) => Math.min(max, Math.max(min, n));
 
+
+function resolveOpenRouterKey() {
+  const rawKey = import.meta.env.VITE_OPENROUTER_API_KEY || import.meta.env.VITE_ANTHROPIC_API_KEY || "";
+  const apiKey = rawKey.trim().replace(/^['"]|['"]$/g, "");
+  const looksLikePlaceholder = /your|replace|example|paste|key/i.test(apiKey);
+
+  if (!apiKey || looksLikePlaceholder) {
+    throw new Error("API key missing/invalid. .env me VITE_OPENROUTER_API_KEY=sk-or-v1-... set karo, phir Vite server restart karo.");
+  }
+
+  return apiKey;
+}
+
 function fallbackScenes(topic, selectedFmt, language, style) {
   const introByLang = {
     en: "Did you know this can change your results fast?",
@@ -299,9 +312,12 @@ export default function AutoVideoMaker() {
   const chunksRef = useRef([]);
   const stopRef = useRef(false);
   const paletteRef = useRef(PALETTES[0]);
+  const cloudTtsUnavailableRef = useRef(false);
 
   const activeFormat = FORMATS.find((f) => f.id === format) || FORMATS[0];
-  const addStatus = (msg) => setStatusLines(prev => [...prev.slice(-4), msg]);
+  const addStatus = useCallback((msg) => {
+    setStatusLines((prev) => [...prev.slice(-4), msg]);
+  }, []);
 
   const speakScene = (text, selectedLanguage, selectedVoiceStyle) => new Promise(resolve => {
     if (!window.speechSynthesis) return resolve();
@@ -321,6 +337,14 @@ export default function AutoVideoMaker() {
     u.onend = resolve; u.onerror = resolve;
     window.speechSynthesis.speak(u);
   });
+
+  const playCapturedNarration = useCallback(async () => {
+    if (cloudTtsUnavailableRef.current) return false;
+
+    cloudTtsUnavailableRef.current = true;
+    addStatus("ℹ️ Cloud TTS abhi available nahi. Browser voice fallback use ho raha hai.");
+    return false;
+  }, [addStatus]);
 
   const makeVideo = useCallback(async () => {
     const scriptMode = contentInputMode === "script";
@@ -382,8 +406,7 @@ Rules:
     let aiInsights = [];
 
     try {
-      const apiKey = import.meta.env.VITE_OPENROUTER_API_KEY || import.meta.env.VITE_ANTHROPIC_API_KEY;
-      if (!apiKey) throw new Error("API key missing. Set VITE_OPENROUTER_API_KEY in .env");
+      const apiKey = resolveOpenRouterKey();
 
       const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
         method: "POST",
@@ -404,7 +427,7 @@ Rules:
       if (!res.ok) {
         const apiError = data?.error?.message || `OpenRouter request failed (${res.status})`;
         if (res.status === 401) {
-          throw new Error("401 Unauthorized: API key invalid/missing. .env me VITE_OPENROUTER_API_KEY set karo.");
+          throw new Error("401 Unauthorized: API key reject ho gaya. Valid OpenRouter key use karo aur dev server restart karo.");
         }
         throw new Error(apiError);
       }
@@ -461,6 +484,7 @@ Rules:
       recRef.current = rec;
       rec.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
       rec.start(100);
+      addStatus("⚠️ Browser security ki wajah se speech voice export me include nahi hoti. Video silent download ho sakti hai.");
     } catch { addStatus("⚠️ Recording supported nahi. Preview mode."); }
 
     const totalDur = scenes.reduce((s, sc) => s + (sc.duration || 9), 0);
@@ -473,7 +497,10 @@ Rules:
       setCurrentScene(i);
       addStatus(`🎬 Scene ${i + 1}/${scenes.length}: "${scene.heading}"`);
 
-      const speechPromise = speakScene(scene.voiceover || scene.heading, language, voiceStyle);
+      const speechPromise = (async () => {
+        const captured = await playCapturedNarration();
+        if (!captured) await speakScene(scene.voiceover || scene.heading, language, voiceStyle);
+      })();
 
       await new Promise(resolve => {
         const sceneStart = Date.now();
@@ -509,7 +536,7 @@ Rules:
     setProgress(1);
     setPhase("done");
     addStatus("🎉 Video ready! Neeche download karo.");
-  }, [topic, customScript, contentInputMode, format, phase, language, contentStyle, voiceStyle]);
+  }, [topic, customScript, contentInputMode, format, phase, language, contentStyle, voiceStyle, playCapturedNarration, addStatus]);
 
   const stopAll = () => {
     stopRef.current = true;
