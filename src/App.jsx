@@ -14,6 +14,80 @@ const PALETTES = [
   { bg: ["#080018","#1e0040"], accent: "#e879f9", glow: "#d946ef", text: "#fdf4ff" },
 ];
 
+const LANGUAGES = [
+  { id: "en", label: "English", ttsHint: "en" },
+  { id: "hi", label: "Hindi", ttsHint: "hi" },
+  { id: "ur", label: "Urdu", ttsHint: "ur" },
+];
+
+const CONTENT_STYLES = [
+  { id: "educational", label: "Educational" },
+  { id: "story", label: "Storytelling" },
+  { id: "motivational", label: "Motivational" },
+  { id: "news", label: "Trending/News" },
+];
+
+const VOICE_STYLES = [
+  { id: "energetic", label: "Energetic", rate: 0.94, pitch: 1.07 },
+  { id: "calm", label: "Calm", rate: 0.87, pitch: 0.98 },
+  { id: "bold", label: "Bold", rate: 0.9, pitch: 0.9 },
+];
+
+const CLAMP = (n, min, max) => Math.min(max, Math.max(min, n));
+
+function fallbackScenes(topic, selectedFmt, language, style) {
+  const introByLang = {
+    en: "Did you know this can change your results fast?",
+    hi: "Kya aap jaante hain ye aapki life ko fast improve kar sakta hai?",
+    ur: "Kya aap jantay hain yeh aap ke results tez behtar kar sakta hai?",
+  };
+
+  const ctaByLang = {
+    en: "Follow for more and share this with a friend today.",
+    hi: "Aisi aur videos ke liye follow karo aur doston ko share karo.",
+    ur: "Aisi mazeed videos ke liye follow karein aur doston ko share karein.",
+  };
+
+  return Array.from({ length: selectedFmt.scenes }).map((_, i) => {
+    const idx = i + 1;
+    const isFirst = i === 0;
+    const isLast = i === selectedFmt.scenes - 1;
+    return {
+      heading: isFirst ? "Power Hook" : isLast ? "Take Action" : `${style} point ${idx}`,
+      caption: isFirst
+        ? `Topic: ${topic}`
+        : isLast
+          ? "Save this and come back later"
+          : `Step ${idx} that improves ${topic}`,
+      voiceover: isFirst ? introByLang[language] : isLast ? ctaByLang[language] : `Quick insight ${idx} about ${topic}. Keep watching for the next practical tip and apply it today for better outcomes.`,
+      emoji: isFirst ? "🔥" : isLast ? "✅" : ["🎯", "⚡", "💡", "🚀", "📌", "🧠"][i % 6],
+      duration: selectedFmt.dur,
+    };
+  });
+}
+
+function normalizeScenes(rawScenes, selectedFmt, title) {
+  const base = Array.isArray(rawScenes) ? rawScenes.slice(0, selectedFmt.scenes) : [];
+  while (base.length < selectedFmt.scenes) {
+    base.push({
+      heading: `Scene ${base.length + 1}`,
+      caption: "Key insight",
+      voiceover: "Stay tuned for the next point.",
+      emoji: "🎬",
+      duration: selectedFmt.dur,
+    });
+  }
+
+  return base.map((scene, idx) => ({
+    heading: (scene?.heading || `Scene ${idx + 1}`).toString().slice(0, 60),
+    caption: (scene?.caption || "Key insight").toString().slice(0, 120),
+    voiceover: (scene?.voiceover || scene?.caption || "Interesting insight").toString().slice(0, 220),
+    emoji: (scene?.emoji || "🎬").toString().slice(0, 2),
+    duration: CLAMP(Number(scene?.duration) || selectedFmt.dur, 6, 12),
+    videoTitle: title,
+  }));
+}
+
 function renderScene(ctx, scene, progress, palette, sceneIdx, totalScenes, format, now) {
   const W = format.w, H = format.h;
   const isReel = format.id === "reel";
@@ -180,6 +254,9 @@ export default function AutoVideoMaker() {
   const [videoTitle, setVideoTitle] = useState("");
   const [currentScene, setCurrentScene] = useState(0);
   const [totalScenes, setTotalScenes] = useState(0);
+  const [language, setLanguage] = useState("en");
+  const [contentStyle, setContentStyle] = useState("educational");
+  const [voiceStyle, setVoiceStyle] = useState("energetic");
 
   const canvasRef = useRef(null);
   const rafRef = useRef(null);
@@ -188,17 +265,23 @@ export default function AutoVideoMaker() {
   const stopRef = useRef(false);
   const paletteRef = useRef(PALETTES[0]);
 
-  const fmt = FORMATS.find(f => f.id === format);
+  const activeFormat = FORMATS.find((f) => f.id === format) || FORMATS[0];
   const addStatus = (msg) => setStatusLines(prev => [...prev.slice(-4), msg]);
 
-  const speakScene = (text) => new Promise(resolve => {
+  const speakScene = (text, selectedLanguage, selectedVoiceStyle) => new Promise(resolve => {
     if (!window.speechSynthesis) return resolve();
     window.speechSynthesis.cancel();
     const u = new SpeechSynthesisUtterance(text);
-    u.rate = 0.9; u.pitch = 1.05; u.volume = 1;
+    const voiceCfg = VOICE_STYLES.find(v => v.id === selectedVoiceStyle) || VOICE_STYLES[0];
+    u.rate = voiceCfg.rate;
+    u.pitch = voiceCfg.pitch;
+    u.volume = 1;
     const voices = window.speechSynthesis.getVoices();
-    const v = voices.find(v => v.lang.startsWith("en") && (v.name.includes("Google") || v.name.includes("Natural")))
-           || voices.find(v => v.lang.startsWith("en")) || voices[0];
+    const langHint = LANGUAGES.find(l => l.id === selectedLanguage)?.ttsHint || "en";
+    const v = voices.find(voice => voice.lang.toLowerCase().startsWith(langHint) && (voice.name.includes("Google") || voice.name.includes("Natural")))
+      || voices.find(voice => voice.lang.toLowerCase().startsWith(langHint))
+      || voices.find(voice => voice.lang.toLowerCase().startsWith("en"))
+      || voices[0];
     if (v) u.voice = v;
     u.onend = resolve; u.onerror = resolve;
     window.speechSynthesis.speak(u);
@@ -213,11 +296,15 @@ export default function AutoVideoMaker() {
     setProgress(0);
     setCurrentScene(0);
 
-    const selectedFmt = FORMATS.find(f => f.id === format);
+    const selectedFmt = FORMATS.find((f) => f.id === format) || FORMATS[0];
     paletteRef.current = PALETTES[Math.floor(Math.random() * PALETTES.length)];
     addStatus("🤖 AI scene plan bana raha hai...");
 
     const prompt = `You are a viral social media video creator. Create a complete ${selectedFmt.label} about: "${topic}"
+
+Language: ${language}
+Content style: ${contentStyle}
+Voice style: ${voiceStyle}
 
 Return ONLY valid JSON (no backticks, no markdown):
 {
@@ -239,9 +326,12 @@ Rules:
 - Scene ${selectedFmt.scenes}: CTA (like, follow, share)
 - Each voiceover = 20-28 words only
 - Duration 8-10 seconds per scene
+- Keep language strictly in ${language}
+- Tone should match this style: ${contentStyle}
 - Make it VIRAL and engaging`;
 
-    let scenes = [], title = "";
+    let scenes = [];
+    let title = "";
 
     try {
       const apiKey = import.meta.env.VITE_OPENROUTER_API_KEY || import.meta.env.VITE_ANTHROPIC_API_KEY;
@@ -283,15 +373,17 @@ Rules:
       const parsed = JSON.parse(jsonText);
 
       scenes = Array.isArray(parsed?.scenes) ? parsed.scenes : [];
-      title = parsed?.title || topic;
-      scenes.forEach(s => { s.videoTitle = title; });
+      title = (parsed?.title || topic || "Auto Video").toString().slice(0, 56);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Dobara try karo.";
       console.error("Scene generation failed", err);
-      setPhase("error");
-      addStatus(`❌ AI error: ${msg}`);
-      return;
+      addStatus(`⚠️ AI error: ${msg}`);
+      addStatus("🛟 Fallback script use kiya gaya taaki video generation rukay nahi.");
+      title = `${topic.slice(0, 38)}${topic.length > 38 ? "..." : ""}` || "Auto Video";
+      scenes = fallbackScenes(topic, selectedFmt, language, contentStyle);
     }
+
+    scenes = normalizeScenes(scenes, selectedFmt, title);
 
     if (!scenes.length) { setPhase("error"); addStatus("❌ Scenes nahi bani. Try again."); return; }
 
@@ -327,7 +419,7 @@ Rules:
       setCurrentScene(i);
       addStatus(`🎬 Scene ${i + 1}/${scenes.length}: "${scene.heading}"`);
 
-      const speechPromise = speakScene(scene.voiceover || scene.heading);
+      const speechPromise = speakScene(scene.voiceover || scene.heading, language, voiceStyle);
 
       await new Promise(resolve => {
         const sceneStart = Date.now();
@@ -363,7 +455,7 @@ Rules:
     setProgress(1);
     setPhase("done");
     addStatus("🎉 Video ready! Neeche download karo.");
-  }, [topic, format, phase]);
+  }, [topic, format, phase, language, contentStyle, voiceStyle]);
 
   const stopAll = () => {
     stopRef.current = true;
@@ -439,6 +531,44 @@ Rules:
             </div>
           </div>
 
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+            <div>
+              <div style={{ fontSize: 10, letterSpacing: 2, color: "#3a3a5a", fontWeight: 700, textTransform: "uppercase", marginBottom: 6 }}>Language</div>
+              <select
+                value={language}
+                onChange={(e) => setLanguage(e.target.value)}
+                disabled={isWorking}
+                style={{ width: "100%", background: "#0a0a14", border: "1.5px solid #16162e", borderRadius: 10, color: "#cbd5e1", padding: "10px" }}
+              >
+                {LANGUAGES.map((lang) => <option key={lang.id} value={lang.id}>{lang.label}</option>)}
+              </select>
+            </div>
+
+            <div>
+              <div style={{ fontSize: 10, letterSpacing: 2, color: "#3a3a5a", fontWeight: 700, textTransform: "uppercase", marginBottom: 6 }}>Voice</div>
+              <select
+                value={voiceStyle}
+                onChange={(e) => setVoiceStyle(e.target.value)}
+                disabled={isWorking}
+                style={{ width: "100%", background: "#0a0a14", border: "1.5px solid #16162e", borderRadius: 10, color: "#cbd5e1", padding: "10px" }}
+              >
+                {VOICE_STYLES.map((voice) => <option key={voice.id} value={voice.id}>{voice.label}</option>)}
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <div style={{ fontSize: 10, letterSpacing: 2, color: "#3a3a5a", fontWeight: 700, textTransform: "uppercase", marginBottom: 6 }}>Content Style</div>
+            <select
+              value={contentStyle}
+              onChange={(e) => setContentStyle(e.target.value)}
+              disabled={isWorking}
+              style={{ width: "100%", background: "#0a0a14", border: "1.5px solid #16162e", borderRadius: 10, color: "#cbd5e1", padding: "10px" }}
+            >
+              {CONTENT_STYLES.map((style) => <option key={style.id} value={style.id}>{style.label}</option>)}
+            </select>
+          </div>
+
           {!isWorking ? (
             <button onClick={makeVideo} disabled={!topic.trim()} style={{ width: "100%", background: topic.trim() ? "linear-gradient(135deg, #7c3aed 0%, #c026d3 100%)" : "#0f0f1e", border: "none", borderRadius: 14, padding: "18px", color: topic.trim() ? "#fff" : "#2a2a45", fontSize: 16, fontWeight: 900, cursor: topic.trim() ? "pointer" : "default", transition: "all 0.3s", boxShadow: topic.trim() ? "0 6px 30px #7c3aed50" : "none", animation: topic.trim() ? "glow 3s infinite" : "none" }}>
               {phase === "done" ? "🔄 Naya Video Banao" : "⚡ Video Banao — Automatic"}
@@ -489,7 +619,7 @@ Rules:
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 16, animation: "fadeUp 0.4s ease 0.1s both" }}>
           <div style={{ background: "#07070d", border: `1.5px solid ${isWorking ? "#3d1f6e" : "#10101e"}`, borderRadius: 16, overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", width: "100%", padding: 12, boxShadow: isWorking ? "0 0 40px #7c3aed20" : "none", transition: "box-shadow 0.5s" }}>
             <div style={{ position: "relative" }}>
-              <canvas ref={canvasRef} width={fmt.w} height={fmt.h} style={{ display: "block", width: displayW, height: displayH, borderRadius: 10, background: "#0a0a14" }} />
+              <canvas ref={canvasRef} width={activeFormat.w} height={activeFormat.h} style={{ display: "block", width: displayW, height: displayH, borderRadius: 10, background: "#0a0a14" }} />
               {phase === "idle" && !videoUrl && (
                 <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, pointerEvents: "none" }}>
                   <div style={{ fontSize: 40 }}>🎬</div>
@@ -524,7 +654,7 @@ Rules:
                 ⬇️ Download Video (.webm)
               </a>
               <div style={{ fontSize: 10, color: "#166534", marginTop: 8, textAlign: "center", lineHeight: 1.6 }}>
-                CapCut / DaVinci Resolve mein import karo → apni awaaz add karo → upload!
+                Voiceover + captions already included. Final polish ke liye CapCut/DaVinci mein music add karke upload karo.
               </div>
             </div>
           )}
