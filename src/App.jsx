@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 
 const FORMATS = [
   { id: "reel", label: "Short / Reel", icon: "📱", w: 720, h: 1280, scenes: 6, dur: 8 },
@@ -39,6 +39,24 @@ const VOICE_STYLES = [
 ];
 
 const CLAMP = (n, min, max) => Math.min(max, Math.max(min, n));
+
+const OPENROUTER_TTS_VOICE = {
+  energetic: "alloy",
+  calm: "nova",
+  bold: "onyx",
+};
+
+function resolveOpenRouterKey() {
+  const rawKey = import.meta.env.VITE_OPENROUTER_API_KEY || import.meta.env.VITE_ANTHROPIC_API_KEY || "";
+  const apiKey = rawKey.trim().replace(/^['"]|['"]$/g, "");
+  const looksLikePlaceholder = /your|replace|example|paste|key/i.test(apiKey);
+
+  if (!apiKey || looksLikePlaceholder) {
+    throw new Error("API key missing/invalid. .env me VITE_OPENROUTER_API_KEY=sk-or-v1-... set karo, phir Vite server restart karo.");
+  }
+
+  return apiKey;
+}
 
 function fallbackScenes(topic, selectedFmt, language, style) {
   const introByLang = {
@@ -299,6 +317,8 @@ export default function AutoVideoMaker() {
   const chunksRef = useRef([]);
   const stopRef = useRef(false);
   const paletteRef = useRef(PALETTES[0]);
+  const audioElRef = useRef(null);
+  const audioUrlRef = useRef(null);
 
   const activeFormat = FORMATS.find((f) => f.id === format) || FORMATS[0];
   const addStatus = (msg) => setStatusLines(prev => [...prev.slice(-4), msg]);
@@ -321,6 +341,53 @@ export default function AutoVideoMaker() {
     u.onend = resolve; u.onerror = resolve;
     window.speechSynthesis.speak(u);
   });
+
+  const playCapturedNarration = useCallback(async (text, selectedLanguage, selectedVoiceStyle) => {
+    const audioEl = audioElRef.current;
+    if (!audioEl) return false;
+
+    try {
+      const apiKey = resolveOpenRouterKey();
+      const voice = OPENROUTER_TTS_VOICE[selectedVoiceStyle] || "alloy";
+      const ttsInput = `${selectedLanguage.toUpperCase()}: ${text}`;
+      const res = await fetch("https://openrouter.ai/api/v1/audio/speech", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${apiKey}`,
+          "HTTP-Referer": window.location.origin,
+          "X-Title": "Auto Video AI",
+        },
+        body: JSON.stringify({
+          model: "openai/gpt-4o-mini-tts",
+          voice,
+          input: ttsInput,
+          response_format: "mp3",
+        }),
+      });
+
+      if (!res.ok) return false;
+      const blob = await res.blob();
+      if (!blob.size) return false;
+
+      if (audioUrlRef.current) URL.revokeObjectURL(audioUrlRef.current);
+      audioUrlRef.current = URL.createObjectURL(blob);
+      audioEl.src = audioUrlRef.current;
+      audioEl.currentTime = 0;
+      await audioEl.play();
+      await new Promise((resolve) => {
+        audioEl.onended = () => resolve();
+        audioEl.onerror = () => resolve();
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  }, []);
+
+  useEffect(() => () => {
+    if (audioUrlRef.current) URL.revokeObjectURL(audioUrlRef.current);
+  }, []);
 
   const makeVideo = useCallback(async () => {
     const scriptMode = contentInputMode === "script";
@@ -382,8 +449,7 @@ Rules:
     let aiInsights = [];
 
     try {
-      const apiKey = import.meta.env.VITE_OPENROUTER_API_KEY || import.meta.env.VITE_ANTHROPIC_API_KEY;
-      if (!apiKey) throw new Error("API key missing. Set VITE_OPENROUTER_API_KEY in .env");
+      const apiKey = resolveOpenRouterKey();
 
       const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
         method: "POST",
@@ -404,7 +470,7 @@ Rules:
       if (!res.ok) {
         const apiError = data?.error?.message || `OpenRouter request failed (${res.status})`;
         if (res.status === 401) {
-          throw new Error("401 Unauthorized: API key invalid/missing. .env me VITE_OPENROUTER_API_KEY set karo.");
+          throw new Error("401 Unauthorized: API key reject ho gaya. Valid OpenRouter key use karo aur dev server restart karo.");
         }
         throw new Error(apiError);
       }
@@ -455,12 +521,21 @@ Rules:
     chunksRef.current = [];
     let rec = null;
     try {
-      const stream = canvas.captureStream(30);
+      const videoStream = canvas.captureStream(30);
+      const audioEl = audioElRef.current;
+      const capturedAudioStream = audioEl
+        ? (audioEl.captureStream?.() || audioEl.mozCaptureStream?.())
+        : null;
+      const mixedTracks = [...videoStream.getVideoTracks(), ...(capturedAudioStream?.getAudioTracks?.() || [])];
+      const stream = new MediaStream(mixedTracks);
       const mime = MediaRecorder.isTypeSupported("video/webm;codecs=vp9") ? "video/webm;codecs=vp9" : "video/webm";
       rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 4000000 });
       recRef.current = rec;
       rec.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
       rec.start(100);
+      if (!capturedAudioStream?.getAudioTracks?.().length) {
+        addStatus("⚠️ Browser audio capture support limited hai. Download me voice missing ho sakti hai.");
+      }
     } catch { addStatus("⚠️ Recording supported nahi. Preview mode."); }
 
     const totalDur = scenes.reduce((s, sc) => s + (sc.duration || 9), 0);
@@ -473,7 +548,10 @@ Rules:
       setCurrentScene(i);
       addStatus(`🎬 Scene ${i + 1}/${scenes.length}: "${scene.heading}"`);
 
-      const speechPromise = speakScene(scene.voiceover || scene.heading, language, voiceStyle);
+      const speechPromise = (async () => {
+        const captured = await playCapturedNarration(scene.voiceover || scene.heading, language, voiceStyle);
+        if (!captured) await speakScene(scene.voiceover || scene.heading, language, voiceStyle);
+      })();
 
       await new Promise(resolve => {
         const sceneStart = Date.now();
@@ -509,7 +587,7 @@ Rules:
     setProgress(1);
     setPhase("done");
     addStatus("🎉 Video ready! Neeche download karo.");
-  }, [topic, customScript, contentInputMode, format, phase, language, contentStyle, voiceStyle]);
+  }, [topic, customScript, contentInputMode, format, phase, language, contentStyle, voiceStyle, playCapturedNarration]);
 
   const stopAll = () => {
     stopRef.current = true;
@@ -713,6 +791,7 @@ Rules:
           <div style={{ background: "#07070d", border: `1.5px solid ${isWorking ? "#3d1f6e" : "#10101e"}`, borderRadius: 16, overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", width: "100%", padding: 12, boxShadow: isWorking ? "0 0 40px #7c3aed20" : "none", transition: "box-shadow 0.5s" }}>
             <div style={{ position: "relative" }}>
               <canvas ref={canvasRef} width={activeFormat.w} height={activeFormat.h} style={{ display: "block", width: displayW, height: displayH, borderRadius: 10, background: "#0a0a14" }} />
+              <audio ref={audioElRef} hidden preload="auto" crossOrigin="anonymous" />
               {phase === "idle" && !videoUrl && (
                 <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, pointerEvents: "none" }}>
                   <div style={{ fontSize: 40 }}>🎬</div>
