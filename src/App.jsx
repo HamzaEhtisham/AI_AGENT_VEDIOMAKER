@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useCallback } from "react";
 
 const FORMATS = [
   { id: "reel", label: "Short / Reel", icon: "📱", w: 720, h: 1280, scenes: 6, dur: 8 },
@@ -307,6 +307,7 @@ export default function AutoVideoMaker() {
   const [insights, setInsights] = useState([]);
 
   const canvasRef = useRef(null);
+  const audioElRef = useRef(null);
   const rafRef = useRef(null);
   const recRef = useRef(null);
   const chunksRef = useRef([]);
