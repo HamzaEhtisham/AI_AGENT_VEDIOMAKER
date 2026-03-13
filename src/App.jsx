@@ -781,7 +781,7 @@ Rules:
                 ⬇️ Download Video (.webm)
               </a>
               <div style={{ fontSize: 10, color: "#166534", marginTop: 8, textAlign: "center", lineHeight: 1.6 }}>
-                Voiceover + captions already included. Final polish ke liye CapCut/DaVinci mein music add karke upload karo.
+                Captions included hain. Voice preview mein sunai degi, lekin browser limits ki wajah se downloaded .webm kabhi silent ho sakti hai.
               </div>
             </div>
           )}
