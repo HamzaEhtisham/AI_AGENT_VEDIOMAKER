@@ -10,12 +10,15 @@ This app generates scene plans and records short videos from a topic prompt.
 npm install
 ```
 
-2. Create `.env` file in project root and add one of these keys:
+2. Provide OpenRouter API key (any one method):
+
+- **Recommended (no restart):** App UI me `OPENROUTER KEY` field me valid key (`sk-or-v1-...`) paste karo aur **Save key** dabao.
+- **Alternative (.env):** project root me `.env` file bana ke set karo:
 
 ```bash
-VITE_OPENROUTER_API_KEY=your_openrouter_key
+VITE_OPENROUTER_API_KEY=sk-or-v1-your_real_key
 # optional fallback
-VITE_ANTHROPIC_API_KEY=your_openrouter_key
+VITE_ANTHROPIC_API_KEY=sk-or-v1-your_real_key
 ```
 
 3. Start dev server:
@@ -83,10 +86,10 @@ A practical blueprint for converting this prototype into a production-grade prom
 ### Common console errors
 
 - `chrome-extension://invalid/ ... ERR_FAILED`
-  - Usually browser extension/devtools injection issue hota hai, app code issue nahi hota. Incognito (extensions off) mein test karein.
+  - Ye browser extension / injected devtool script issue hota hai (app bug nahi). Extensions disable karke ya Incognito (extensions off) me test karein.
 
 - `openrouter.ai/api/v1/chat/completions 401`
-  - API key invalid/missing hai. `.env` mein `VITE_OPENROUTER_API_KEY` set karein and dev server restart karein.
+  - Invalid/revoked key ki wajah se aata hai. App ke `OPENROUTER KEY` input me fresh valid `sk-or-v1-...` key save karo (ya `.env` update karo).
 
 - Voice preview sunai deti hai but downloaded video silent hoti hai
   - Web Speech API (`speechSynthesis`) audio ko browsers reliably `MediaRecorder` export stream mein include nahi karte. Ye platform limitation hai.

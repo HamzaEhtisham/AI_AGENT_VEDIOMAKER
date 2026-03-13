@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useMemo } from "react";
 
 const FORMATS = [
   { id: "reel", label: "Short / Reel", icon: "📱", w: 720, h: 1280, scenes: 6, dur: 8 },
@@ -41,13 +41,20 @@ const VOICE_STYLES = [
 const CLAMP = (n, min, max) => Math.min(max, Math.max(min, n));
 
 
-function resolveOpenRouterKey() {
-  const rawKey = import.meta.env.VITE_OPENROUTER_API_KEY || import.meta.env.VITE_ANTHROPIC_API_KEY || "";
+const OPENROUTER_KEY_STORAGE = "openrouter_api_key";
+
+function resolveOpenRouterKey(runtimeKey = "") {
+  const rawKey = runtimeKey
+    || localStorage.getItem(OPENROUTER_KEY_STORAGE)
+    || import.meta.env.VITE_OPENROUTER_API_KEY
+    || import.meta.env.VITE_ANTHROPIC_API_KEY
+    || "";
   const apiKey = rawKey.trim().replace(/^['"]|['"]$/g, "");
   const looksLikePlaceholder = /your|replace|example|paste|key/i.test(apiKey);
+  const looksLikeOpenRouter = /^sk-or-v1-[a-zA-Z0-9_-]{20,}$/.test(apiKey);
 
-  if (!apiKey || looksLikePlaceholder) {
-    throw new Error("API key missing/invalid. .env me VITE_OPENROUTER_API_KEY=sk-or-v1-... set karo, phir Vite server restart karo.");
+  if (!apiKey || looksLikePlaceholder || !looksLikeOpenRouter) {
+    throw new Error("OpenRouter key missing/invalid. Settings me valid key paste karo (sk-or-v1-...), ya .env me VITE_OPENROUTER_API_KEY set karke server restart karo.");
   }
 
   return apiKey;
@@ -305,6 +312,7 @@ export default function AutoVideoMaker() {
   const [contentStyle, setContentStyle] = useState("educational");
   const [voiceStyle, setVoiceStyle] = useState("energetic");
   const [insights, setInsights] = useState([]);
+  const [openRouterKey, setOpenRouterKey] = useState(() => localStorage.getItem(OPENROUTER_KEY_STORAGE) || "");
 
   const canvasRef = useRef(null);
   const audioElRef = useRef(null);
@@ -316,6 +324,12 @@ export default function AutoVideoMaker() {
   const cloudTtsUnavailableRef = useRef(false);
 
   const activeFormat = FORMATS.find((f) => f.id === format) || FORMATS[0];
+  const maskedKeyPreview = useMemo(() => {
+    const k = openRouterKey.trim();
+    if (!k) return "";
+    if (k.length <= 12) return `${k.slice(0, 4)}••••`;
+    return `${k.slice(0, 8)}••••${k.slice(-4)}`;
+  }, [openRouterKey]);
   const addStatus = useCallback((msg) => {
     setStatusLines((prev) => [...prev.slice(-4), msg]);
   }, []);
@@ -407,7 +421,7 @@ Rules:
     let aiInsights = [];
 
     try {
-      const apiKey = resolveOpenRouterKey();
+      const apiKey = resolveOpenRouterKey(openRouterKey);
 
       const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
         method: "POST",
@@ -428,7 +442,9 @@ Rules:
       if (!res.ok) {
         const apiError = data?.error?.message || `OpenRouter request failed (${res.status})`;
         if (res.status === 401) {
-          throw new Error("401 Unauthorized: API key reject ho gaya. Valid OpenRouter key use karo aur dev server restart karo.");
+          localStorage.removeItem(OPENROUTER_KEY_STORAGE);
+          setOpenRouterKey("");
+          throw new Error("401 Unauthorized: OpenRouter key reject ho gayi. Nayi valid key Settings me paste karo.");
         }
         throw new Error(apiError);
       }
@@ -543,7 +559,19 @@ Rules:
     setProgress(1);
     setPhase("done");
     addStatus("🎉 Video ready! Neeche download karo.");
-  }, [topic, customScript, contentInputMode, format, phase, language, contentStyle, voiceStyle, playCapturedNarration, addStatus]);
+  }, [topic, customScript, contentInputMode, format, phase, language, contentStyle, voiceStyle, playCapturedNarration, addStatus, openRouterKey]);
+
+  const saveApiKey = () => {
+    const cleaned = openRouterKey.trim();
+    localStorage.setItem(OPENROUTER_KEY_STORAGE, cleaned);
+    addStatus("🔐 OpenRouter key browser me save ho gayi.");
+  };
+
+  const clearApiKey = () => {
+    setOpenRouterKey("");
+    localStorage.removeItem(OPENROUTER_KEY_STORAGE);
+    addStatus("🧹 Saved API key clear kar di gayi.");
+  };
 
   const stopAll = () => {
     stopRef.current = true;
@@ -606,6 +634,25 @@ Rules:
                   {mode.label}
                 </button>
               ))}
+            </div>
+          </div>
+
+          <div>
+            <div style={{ fontSize: 10, letterSpacing: 2.5, color: "#3a3a5a", fontWeight: 700, textTransform: "uppercase", marginBottom: 8 }}>OPENROUTER KEY</div>
+            <input
+              type="password"
+              value={openRouterKey}
+              onChange={(e) => setOpenRouterKey(e.target.value)}
+              disabled={isWorking}
+              placeholder="sk-or-v1-..."
+              style={{ width: "100%", background: "#0a0a14", border: `1.5px solid ${openRouterKey.trim() ? "#16a34a" : "#16162e"}`, borderRadius: 12, padding: "12px 14px", color: "#e8e8f5", fontSize: 13 }}
+            />
+            <div style={{ marginTop: 7, display: "flex", gap: 8 }}>
+              <button onClick={saveApiKey} disabled={isWorking || !openRouterKey.trim()} style={{ background: "#0f172a", border: "1px solid #1e293b", color: "#93c5fd", borderRadius: 8, padding: "6px 10px", fontSize: 11, cursor: isWorking || !openRouterKey.trim() ? "default" : "pointer" }}>Save key</button>
+              <button onClick={clearApiKey} disabled={isWorking} style={{ background: "#1a0505", border: "1px solid #7f1d1d", color: "#fca5a5", borderRadius: 8, padding: "6px 10px", fontSize: 11, cursor: isWorking ? "default" : "pointer" }}>Clear</button>
+            </div>
+            <div style={{ marginTop: 6, color: "#4c4c72", fontSize: 11 }}>
+              {maskedKeyPreview ? `Saved preview: ${maskedKeyPreview}` : "No key saved yet. Invalid key se 401 aata hai."}
             </div>
           </div>
 
