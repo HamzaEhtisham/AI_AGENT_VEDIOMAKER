@@ -78,3 +78,15 @@ Also ensure the catch block uses `catch (err)` and references `err` (not `error`
 
 A practical blueprint for converting this prototype into a production-grade prompt → animated reel generator is available in [`AI_AGENT_BLUEPRINT.md`](./AI_AGENT_BLUEPRINT.md).
 
+
+
+### Common console errors
+
+- `chrome-extension://invalid/ ... ERR_FAILED`
+  - Usually browser extension/devtools injection issue hota hai, app code issue nahi hota. Incognito (extensions off) mein test karein.
+
+- `openrouter.ai/api/v1/chat/completions 401`
+  - API key invalid/missing hai. `.env` mein `VITE_OPENROUTER_API_KEY` set karein and dev server restart karein.
+
+- Voice preview sunai deti hai but downloaded video silent hoti hai
+  - Web Speech API (`speechSynthesis`) audio ko browsers reliably `MediaRecorder` export stream mein include nahi karte. Ye platform limitation hai.
