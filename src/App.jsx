@@ -265,7 +265,7 @@ export default function AutoVideoMaker() {
   const stopRef = useRef(false);
   const paletteRef = useRef(PALETTES[0]);
 
-  const fmt = FORMATS.find(f => f.id === format);
+  const activeFormat = FORMATS.find((f) => f.id === format) || FORMATS[0];
   const addStatus = (msg) => setStatusLines(prev => [...prev.slice(-4), msg]);
 
   const speakScene = (text, selectedLanguage, selectedVoiceStyle) => new Promise(resolve => {
@@ -296,7 +296,7 @@ export default function AutoVideoMaker() {
     setProgress(0);
     setCurrentScene(0);
 
-    const selectedFmt = FORMATS.find(f => f.id === format);
+    const selectedFmt = FORMATS.find((f) => f.id === format) || FORMATS[0];
     paletteRef.current = PALETTES[Math.floor(Math.random() * PALETTES.length)];
     addStatus("🤖 AI scene plan bana raha hai...");
 
@@ -619,7 +619,7 @@ Rules:
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 16, animation: "fadeUp 0.4s ease 0.1s both" }}>
           <div style={{ background: "#07070d", border: `1.5px solid ${isWorking ? "#3d1f6e" : "#10101e"}`, borderRadius: 16, overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", width: "100%", padding: 12, boxShadow: isWorking ? "0 0 40px #7c3aed20" : "none", transition: "box-shadow 0.5s" }}>
             <div style={{ position: "relative" }}>
-              <canvas ref={canvasRef} width={fmt.w} height={fmt.h} style={{ display: "block", width: displayW, height: displayH, borderRadius: 10, background: "#0a0a14" }} />
+              <canvas ref={canvasRef} width={activeFormat.w} height={activeFormat.h} style={{ display: "block", width: displayW, height: displayH, borderRadius: 10, background: "#0a0a14" }} />
               {phase === "idle" && !videoUrl && (
                 <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, pointerEvents: "none" }}>
                   <div style={{ fontSize: 40 }}>🎬</div>
