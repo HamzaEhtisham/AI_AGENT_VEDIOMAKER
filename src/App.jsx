@@ -27,6 +27,11 @@ const CONTENT_STYLES = [
   { id: "news", label: "Trending/News" },
 ];
 
+const CONTENT_INPUT_MODES = [
+  { id: "topic", label: "AI Topic Mode" },
+  { id: "script", label: "Custom Script Mode" },
+];
+
 const VOICE_STYLES = [
   { id: "energetic", label: "Energetic", rate: 0.94, pitch: 1.07 },
   { id: "calm", label: "Calm", rate: 0.87, pitch: 0.98 },
@@ -99,6 +104,12 @@ function renderScene(ctx, scene, progress, palette, sceneIdx, totalScenes, forma
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, W, H);
 
+  const vignette = ctx.createRadialGradient(W * 0.5, H * 0.45, H * 0.2, W * 0.5, H * 0.5, H * 0.95);
+  vignette.addColorStop(0, "transparent");
+  vignette.addColorStop(1, "#00000066");
+  ctx.fillStyle = vignette;
+  ctx.fillRect(0, 0, W, H);
+
   for (let i = 0; i < 5; i++) {
     const ox = W * (0.1 + 0.2 * i + 0.06 * Math.sin(t * 0.3 + i * 1.2));
     const oy = H * (0.15 + 0.15 * i + 0.1 * Math.cos(t * 0.25 + i * 0.8));
@@ -109,6 +120,17 @@ function renderScene(ctx, scene, progress, palette, sceneIdx, totalScenes, forma
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, W, H);
   }
+
+  ctx.save();
+  ctx.globalAlpha = 0.18;
+  ctx.translate(W * 0.5, H * 0.5);
+  ctx.rotate(t * 0.16);
+  for (let i = 0; i < 3; i++) {
+    ctx.strokeStyle = `${palette.accent}${i === 1 ? "77" : "33"}`;
+    ctx.lineWidth = 1 + i;
+    ctx.strokeRect(-W * (0.12 + i * 0.1), -H * (0.12 + i * 0.1), W * (0.24 + i * 0.2), H * (0.24 + i * 0.2));
+  }
+  ctx.restore();
 
   ctx.strokeStyle = "#ffffff04";
   ctx.lineWidth = 1;
@@ -204,6 +226,16 @@ function renderScene(ctx, scene, progress, palette, sceneIdx, totalScenes, forma
   ctx.fillStyle = capGrad;
   ctx.fillRect(0, H - capH, W, capH);
 
+  const shineX = ((t * (isReel ? 130 : 170)) % (W + 260)) - 260;
+  const shine = ctx.createLinearGradient(shineX, 0, shineX + 240, 0);
+  shine.addColorStop(0, "transparent");
+  shine.addColorStop(0.45, `${palette.accent}00`);
+  shine.addColorStop(0.5, `${palette.accent}66`);
+  shine.addColorStop(0.55, `${palette.accent}00`);
+  shine.addColorStop(1, "transparent");
+  ctx.fillStyle = shine;
+  ctx.fillRect(0, H - capH, W, capH);
+
   ctx.globalAlpha = Math.min(1, Math.max(0, progress * 6 - 0.4));
   ctx.font = `bold ${isReel ? 22 : 18}px 'Segoe UI', sans-serif`;
   ctx.textAlign = "center";
@@ -246,6 +278,8 @@ function renderScene(ctx, scene, progress, palette, sceneIdx, totalScenes, forma
 
 export default function AutoVideoMaker() {
   const [topic, setTopic] = useState("");
+  const [contentInputMode, setContentInputMode] = useState("topic");
+  const [customScript, setCustomScript] = useState("");
   const [format, setFormat] = useState("reel");
   const [phase, setPhase] = useState("idle");
   const [statusLines, setStatusLines] = useState([]);
@@ -257,6 +291,7 @@ export default function AutoVideoMaker() {
   const [language, setLanguage] = useState("en");
   const [contentStyle, setContentStyle] = useState("educational");
   const [voiceStyle, setVoiceStyle] = useState("energetic");
+  const [insights, setInsights] = useState([]);
 
   const canvasRef = useRef(null);
   const rafRef = useRef(null);
@@ -288,19 +323,28 @@ export default function AutoVideoMaker() {
   });
 
   const makeVideo = useCallback(async () => {
-    if (!topic.trim() || phase === "thinking" || phase === "recording") return;
+    const scriptMode = contentInputMode === "script";
+    if (phase === "thinking" || phase === "recording") return;
+    if (!topic.trim() && !customScript.trim()) return;
     stopRef.current = false;
     setPhase("thinking");
     setVideoUrl(null);
     setStatusLines([]);
     setProgress(0);
     setCurrentScene(0);
+    setInsights([]);
 
     const selectedFmt = FORMATS.find((f) => f.id === format) || FORMATS[0];
     paletteRef.current = PALETTES[Math.floor(Math.random() * PALETTES.length)];
     addStatus("🤖 AI scene plan bana raha hai...");
 
-    const prompt = `You are a viral social media video creator. Create a complete ${selectedFmt.label} about: "${topic}"
+    const contentSource = scriptMode
+      ? `Use this user-written script as the source of truth. Keep the meaning but optimize for short-video delivery:\n${customScript}`
+      : `Topic: "${topic}"`;
+
+    const prompt = `You are a viral social media video creator + research assistant. Create a complete ${selectedFmt.label}.
+
+${contentSource}
 
 Language: ${language}
 Content style: ${contentStyle}
@@ -309,6 +353,7 @@ Voice style: ${voiceStyle}
 Return ONLY valid JSON (no backticks, no markdown):
 {
   "title": "catchy title max 50 chars",
+  "insights": ["3-5 short bullets with related facts/context"],
   "scenes": [
     {
       "heading": "3-5 word punchy title",
@@ -328,10 +373,13 @@ Rules:
 - Duration 8-10 seconds per scene
 - Keep language strictly in ${language}
 - Tone should match this style: ${contentStyle}
-- Make it VIRAL and engaging`;
+- Make it VIRAL and engaging
+- If user script is provided, preserve the same narrative flow (hook -> body -> ending)
+- insights should summarize key related details that help audience understand the script better`;
 
     let scenes = [];
     let title = "";
+    let aiInsights = [];
 
     try {
       const apiKey = import.meta.env.VITE_OPENROUTER_API_KEY || import.meta.env.VITE_ANTHROPIC_API_KEY;
@@ -374,13 +422,18 @@ Rules:
 
       scenes = Array.isArray(parsed?.scenes) ? parsed.scenes : [];
       title = (parsed?.title || topic || "Auto Video").toString().slice(0, 56);
+      aiInsights = Array.isArray(parsed?.insights)
+        ? parsed.insights.map((item) => item?.toString().trim()).filter(Boolean).slice(0, 5)
+        : [];
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Dobara try karo.";
       console.error("Scene generation failed", err);
       addStatus(`⚠️ AI error: ${msg}`);
       addStatus("🛟 Fallback script use kiya gaya taaki video generation rukay nahi.");
-      title = `${topic.slice(0, 38)}${topic.length > 38 ? "..." : ""}` || "Auto Video";
-      scenes = fallbackScenes(topic, selectedFmt, language, contentStyle);
+      const fallbackTopic = topic || customScript.split("\n")[0] || "Auto Video";
+      title = `${fallbackTopic.slice(0, 38)}${fallbackTopic.length > 38 ? "..." : ""}` || "Auto Video";
+      scenes = fallbackScenes(fallbackTopic, selectedFmt, language, contentStyle);
+      aiInsights = ["AI insights unavailable. Retry with API key for related facts."];
     }
 
     scenes = normalizeScenes(scenes, selectedFmt, title);
@@ -388,6 +441,7 @@ Rules:
     if (!scenes.length) { setPhase("error"); addStatus("❌ Scenes nahi bani. Try again."); return; }
 
     setVideoTitle(title);
+    setInsights(aiInsights);
     setTotalScenes(scenes.length);
     addStatus(`✅ ${scenes.length} scenes ready! Recording shuru...`);
     setPhase("recording");
@@ -455,7 +509,7 @@ Rules:
     setProgress(1);
     setPhase("done");
     addStatus("🎉 Video ready! Neeche download karo.");
-  }, [topic, format, phase, language, contentStyle, voiceStyle]);
+  }, [topic, customScript, contentInputMode, format, phase, language, contentStyle, voiceStyle]);
 
   const stopAll = () => {
     stopRef.current = true;
@@ -507,6 +561,21 @@ Rules:
 
         <div style={{ display: "flex", flexDirection: "column", gap: 18, animation: "fadeUp 0.4s ease" }}>
           <div>
+            <div style={{ fontSize: 10, letterSpacing: 2.5, color: "#3a3a5a", fontWeight: 700, textTransform: "uppercase", marginBottom: 10 }}>CONTENT INPUT</div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+              {CONTENT_INPUT_MODES.map((mode) => (
+                <button
+                  key={mode.id}
+                  onClick={() => !isWorking && setContentInputMode(mode.id)}
+                  style={{ background: contentInputMode === mode.id ? "#1a0a30" : "#0a0a14", border: `1.5px solid ${contentInputMode === mode.id ? "#7c3aed" : "#16162e"}`, color: contentInputMode === mode.id ? "#c084fc" : "#4c4c72", borderRadius: 10, padding: "10px 8px", fontSize: 12, fontWeight: 700, cursor: isWorking ? "default" : "pointer" }}
+                >
+                  {mode.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div>
             <div style={{ fontSize: 10, letterSpacing: 2.5, color: "#3a3a5a", fontWeight: 700, textTransform: "uppercase", marginBottom: 8 }}>VIDEO TOPIC</div>
             <textarea
               value={topic}
@@ -516,6 +585,21 @@ Rules:
               rows={4}
               style={{ width: "100%", background: "#0a0a14", border: `1.5px solid ${topic ? "#7c3aed" : "#16162e"}`, borderRadius: 12, padding: "14px 16px", color: "#e8e8f5", fontSize: 14, lineHeight: 1.7, resize: "none", transition: "border-color 0.2s" }}
             />
+          </div>
+
+          <div>
+            <div style={{ fontSize: 10, letterSpacing: 2.5, color: "#3a3a5a", fontWeight: 700, textTransform: "uppercase", marginBottom: 8 }}>USER SCRIPT (OPTIONAL)</div>
+            <textarea
+              value={customScript}
+              onChange={(e) => setCustomScript(e.target.value)}
+              disabled={isWorking}
+              placeholder={"Hook:\nBody:\nEnding:\n\nApna script yahan paste karo, AI isko optimize + related insights dega."}
+              rows={6}
+              style={{ width: "100%", background: "#0a0a14", border: `1.5px solid ${customScript ? "#c026d3" : "#16162e"}`, borderRadius: 12, padding: "14px 16px", color: "#e8e8f5", fontSize: 13, lineHeight: 1.65, resize: "vertical" }}
+            />
+            <div style={{ marginTop: 6, color: "#4c4c72", fontSize: 11 }}>
+              {contentInputMode === "script" ? "Script mode active: AI aapke flow ko preserve karega." : "Tip: better output ke liye Hook / Body / Ending format use karo."}
+            </div>
           </div>
 
           <div>
@@ -570,7 +654,7 @@ Rules:
           </div>
 
           {!isWorking ? (
-            <button onClick={makeVideo} disabled={!topic.trim()} style={{ width: "100%", background: topic.trim() ? "linear-gradient(135deg, #7c3aed 0%, #c026d3 100%)" : "#0f0f1e", border: "none", borderRadius: 14, padding: "18px", color: topic.trim() ? "#fff" : "#2a2a45", fontSize: 16, fontWeight: 900, cursor: topic.trim() ? "pointer" : "default", transition: "all 0.3s", boxShadow: topic.trim() ? "0 6px 30px #7c3aed50" : "none", animation: topic.trim() ? "glow 3s infinite" : "none" }}>
+            <button onClick={makeVideo} disabled={!topic.trim() && !customScript.trim()} style={{ width: "100%", background: topic.trim() || customScript.trim() ? "linear-gradient(135deg, #7c3aed 0%, #c026d3 100%)" : "#0f0f1e", border: "none", borderRadius: 14, padding: "18px", color: topic.trim() || customScript.trim() ? "#fff" : "#2a2a45", fontSize: 16, fontWeight: 900, cursor: topic.trim() || customScript.trim() ? "pointer" : "default", transition: "all 0.3s", boxShadow: topic.trim() || customScript.trim() ? "0 6px 30px #7c3aed50" : "none", animation: topic.trim() || customScript.trim() ? "glow 3s infinite" : "none" }}>
               {phase === "done" ? "🔄 Naya Video Banao" : "⚡ Video Banao — Automatic"}
             </button>
           ) : (
@@ -596,6 +680,15 @@ Rules:
             <div style={{ background: "#07070d", border: "1px solid #10101e", borderRadius: 10, padding: "12px 14px" }}>
               {statusLines.map((s, i) => (
                 <div key={i} style={{ fontSize: 11, color: i === statusLines.length - 1 ? "#c084fc" : "#2a2a45", lineHeight: 1.8, animation: "statusIn 0.3s ease", fontFamily: "monospace" }}>{s}</div>
+              ))}
+            </div>
+          )}
+
+          {insights.length > 0 && (
+            <div style={{ background: "#07101b", border: "1px solid #1d3b6e", borderRadius: 10, padding: "12px 14px" }}>
+              <div style={{ fontSize: 10, color: "#60a5fa", textTransform: "uppercase", letterSpacing: 2, marginBottom: 8, fontWeight: 700 }}>AI Related Insights</div>
+              {insights.map((point, i) => (
+                <div key={i} style={{ color: "#bfdbfe", fontSize: 12, lineHeight: 1.65, marginBottom: 6 }}>• {point}</div>
               ))}
             </div>
           )}
