@@ -73,3 +73,8 @@ npm run lint
 ```
 
 Also ensure the catch block uses `catch (err)` and references `err` (not `error`) in `src/App.jsx`.
+
+## AI Agent Build Blueprint
+
+A practical blueprint for converting this prototype into a production-grade prompt → animated reel generator is available in [`AI_AGENT_BLUEPRINT.md`](./AI_AGENT_BLUEPRINT.md).
+
