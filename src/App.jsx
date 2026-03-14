@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useMemo } from "react";
+import { useState, useRef, useCallback, useMemo, useEffect } from "react";
 
 const FORMATS = [
   { id: "reel", label: "Short / Reel", icon: "📱", w: 720, h: 1280, scenes: 6, dur: 8 },
@@ -51,13 +51,20 @@ function resolveOpenRouterKey(runtimeKey = "") {
     || "";
   const apiKey = rawKey.trim().replace(/^['"]|['"]$/g, "");
   const looksLikePlaceholder = /your|replace|example|paste|key/i.test(apiKey);
-  const looksLikeOpenRouter = /^sk-or-v1-[a-zA-Z0-9_-]{20,}$/.test(apiKey);
+  const looksLikeOpenRouter = apiKey.startsWith("sk-or-v1-") && apiKey.length >= 16;
 
   if (!apiKey || looksLikePlaceholder || !looksLikeOpenRouter) {
     throw new Error("OpenRouter key missing/invalid. Settings me valid key paste karo (sk-or-v1-...), ya .env me VITE_OPENROUTER_API_KEY set karke server restart karo.");
   }
 
   return apiKey;
+}
+
+
+
+function isNoiseFromChromeExtensionIssue(message = "") {
+  const msg = message.toLowerCase();
+  return msg.includes("chrome-extension://invalid") || msg.includes("net::err_failed");
 }
 
 function fallbackScenes(topic, selectedFmt, language, style) {
@@ -333,6 +340,33 @@ export default function AutoVideoMaker() {
   const addStatus = useCallback((msg) => {
     setStatusLines((prev) => [...prev.slice(-4), msg]);
   }, []);
+
+  useEffect(() => {
+    const onWindowError = (event) => {
+      const source = `${event?.filename || ""} ${event?.message || ""}`;
+      if (isNoiseFromChromeExtensionIssue(source)) {
+        event.preventDefault();
+      }
+    };
+
+    const onUnhandledRejection = (event) => {
+      const reason = event?.reason;
+      const message = typeof reason === "string"
+        ? reason
+        : (reason?.message || "");
+      if (isNoiseFromChromeExtensionIssue(message)) {
+        event.preventDefault();
+      }
+    };
+
+    window.addEventListener("error", onWindowError);
+    window.addEventListener("unhandledrejection", onUnhandledRejection);
+    return () => {
+      window.removeEventListener("error", onWindowError);
+      window.removeEventListener("unhandledrejection", onUnhandledRejection);
+    };
+  }, []);
+
 
   const speakScene = (text, selectedLanguage, selectedVoiceStyle) => new Promise(resolve => {
     if (!window.speechSynthesis) return resolve();
@@ -653,6 +687,8 @@ Rules:
             </div>
             <div style={{ marginTop: 6, color: "#4c4c72", fontSize: 11 }}>
               {maskedKeyPreview ? `Saved preview: ${maskedKeyPreview}` : "No key saved yet. Invalid key se 401 aata hai."}
+              <br />
+              Chrome extension wala ERR_FAILED ignore karo — app auto-filter kar rahi hai.
             </div>
           </div>
 
