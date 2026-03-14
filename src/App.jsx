@@ -1,17 +1,63 @@
-import { useState, useRef, useCallback, useMemo, useEffect } from "react";
+import { useState, useRef, useCallback } from "react";
 
 const FORMATS = [
-  { id: "reel", label: "Short / Reel", icon: "📱", w: 720, h: 1280, scenes: 6, dur: 8 },
-  { id: "youtube", label: "YouTube Video", icon: "🎬", w: 1280, h: 720, scenes: 14, dur: 10 },
+  {
+    id: "reel",
+    label: "Short / Reel",
+    icon: "📱",
+    w: 720,
+    h: 1280,
+    scenes: 6,
+    dur: 8,
+  },
+  {
+    id: "youtube",
+    label: "YouTube Video",
+    icon: "🎬",
+    w: 1280,
+    h: 720,
+    scenes: 14,
+    dur: 10,
+  },
 ];
 
 const PALETTES = [
-  { bg: ["#0a0014","#1a0035"], accent: "#c084fc", glow: "#c084fc", text: "#f3e8ff" },
-  { bg: ["#001a12","#003d28"], accent: "#34d399", glow: "#34d399", text: "#ecfdf5" },
-  { bg: ["#0a0a00","#1f1f00"], accent: "#facc15", glow: "#fbbf24", text: "#fefce8" },
-  { bg: ["#00050f","#001333"], accent: "#38bdf8", glow: "#0ea5e9", text: "#e0f2fe" },
-  { bg: ["#0f0000","#2a0000"], accent: "#f87171", glow: "#ef4444", text: "#fff1f2" },
-  { bg: ["#080018","#1e0040"], accent: "#e879f9", glow: "#d946ef", text: "#fdf4ff" },
+  {
+    bg: ["#0a0014", "#1a0035"],
+    accent: "#c084fc",
+    glow: "#c084fc",
+    text: "#f3e8ff",
+  },
+  {
+    bg: ["#001a12", "#003d28"],
+    accent: "#34d399",
+    glow: "#34d399",
+    text: "#ecfdf5",
+  },
+  {
+    bg: ["#0a0a00", "#1f1f00"],
+    accent: "#facc15",
+    glow: "#fbbf24",
+    text: "#fefce8",
+  },
+  {
+    bg: ["#00050f", "#001333"],
+    accent: "#38bdf8",
+    glow: "#0ea5e9",
+    text: "#e0f2fe",
+  },
+  {
+    bg: ["#0f0000", "#2a0000"],
+    accent: "#f87171",
+    glow: "#ef4444",
+    text: "#fff1f2",
+  },
+  {
+    bg: ["#080018", "#1e0040"],
+    accent: "#e879f9",
+    glow: "#d946ef",
+    text: "#fdf4ff",
+  },
 ];
 
 const LANGUAGES = [
@@ -40,66 +86,61 @@ const VOICE_STYLES = [
 
 const CLAMP = (n, min, max) => Math.min(max, Math.max(min, n));
 
-
-const OPENROUTER_KEY_STORAGE = "openrouter_api_key";
-
-function resolveOpenRouterKey(runtimeKey = "") {
-  const rawKey = runtimeKey
-    || localStorage.getItem(OPENROUTER_KEY_STORAGE)
-    || import.meta.env.VITE_OPENROUTER_API_KEY
-    || import.meta.env.VITE_ANTHROPIC_API_KEY
-    || "";
-  const apiKey = rawKey.trim().replace(/^['"]|['"]$/g, "");
-  const looksLikePlaceholder = /your|replace|example|paste|key/i.test(apiKey);
-  const looksLikeOpenRouter = apiKey.startsWith("sk-or-v1-") && apiKey.length >= 16;
-
-  if (!apiKey || looksLikePlaceholder || !looksLikeOpenRouter) {
-    throw new Error("OpenRouter key missing/invalid. Settings me valid key paste karo (sk-or-v1-...), ya .env me VITE_OPENROUTER_API_KEY set karke server restart karo.");
+// ✅ Sirf .env se key lega — UI input nahi
+function getOpenRouterKey() {
+  const key = (import.meta.env.VITE_OPENROUTER_API_KEY || "").trim();
+  if (!key || !key.startsWith("sk-or-v1-")) {
+    throw new Error(
+      "OpenRouter key nahi mili! .env file mein VITE_OPENROUTER_API_KEY=sk-or-v1-... set karo aur server restart karo.",
+    );
   }
-
-  return apiKey;
-}
-
-
-
-function isNoiseFromChromeExtensionIssue(message = "") {
-  const msg = message.toLowerCase();
-  return msg.includes("chrome-extension://invalid") || msg.includes("net::err_failed");
+  return key;
 }
 
 function fallbackScenes(topic, selectedFmt, language, style) {
   const introByLang = {
-    en: "Did you know this can change your results fast?",
-    hi: "Kya aap jaante hain ye aapki life ko fast improve kar sakta hai?",
-    ur: "Kya aap jantay hain yeh aap ke results tez behtar kar sakta hai?",
+    en: "Did you know this can completely change your results starting today?",
+    hi: "Kya aap jaante hain ye ek cheez aapki life bilkul badal sakti hai?",
+    ur: "Kya aap jantay hain yeh ek cheez aap ki zindagi badal sakti hai?",
   };
-
   const ctaByLang = {
-    en: "Follow for more and share this with a friend today.",
+    en: "Follow for more amazing content and share this with someone who needs it!",
     hi: "Aisi aur videos ke liye follow karo aur doston ko share karo.",
-    ur: "Aisi mazeed videos ke liye follow karein aur doston ko share karein.",
+    ur: "Mazeed videos ke liye follow karein aur doston ke saath share karein.",
   };
-
-  return Array.from({ length: selectedFmt.scenes }).map((_, i) => {
-    const idx = i + 1;
-    const isFirst = i === 0;
-    const isLast = i === selectedFmt.scenes - 1;
-    return {
-      heading: isFirst ? "Power Hook" : isLast ? "Take Action" : `${style} point ${idx}`,
-      caption: isFirst
-        ? `Topic: ${topic}`
-        : isLast
-          ? "Save this and come back later"
-          : `Step ${idx} that improves ${topic}`,
-      voiceover: isFirst ? introByLang[language] : isLast ? ctaByLang[language] : `Quick insight ${idx} about ${topic}. Keep watching for the next practical tip and apply it today for better outcomes.`,
-      emoji: isFirst ? "🔥" : isLast ? "✅" : ["🎯", "⚡", "💡", "🚀", "📌", "🧠"][i % 6],
-      duration: selectedFmt.dur,
-    };
-  });
+  return Array.from({ length: selectedFmt.scenes }).map((_, i) => ({
+    heading:
+      i === 0
+        ? "Power Hook"
+        : i === selectedFmt.scenes - 1
+          ? "Take Action Now"
+          : `${style} Point ${i + 1}`,
+    caption:
+      i === 0
+        ? `About: ${topic}`
+        : i === selectedFmt.scenes - 1
+          ? "Save & Share this!"
+          : `Key insight about ${topic}`,
+    voiceover:
+      i === 0
+        ? introByLang[language] || introByLang.en
+        : i === selectedFmt.scenes - 1
+          ? ctaByLang[language] || ctaByLang.en
+          : `Here is insight number ${i + 1} about ${topic}. Apply this tip consistently every day for amazing results in your life.`,
+    emoji:
+      i === 0
+        ? "🔥"
+        : i === selectedFmt.scenes - 1
+          ? "✅"
+          : ["🎯", "⚡", "💡", "🚀", "📌", "🧠"][i % 6],
+    duration: selectedFmt.dur,
+  }));
 }
 
 function normalizeScenes(rawScenes, selectedFmt, title) {
-  const base = Array.isArray(rawScenes) ? rawScenes.slice(0, selectedFmt.scenes) : [];
+  const base = Array.isArray(rawScenes)
+    ? rawScenes.slice(0, selectedFmt.scenes)
+    : [];
   while (base.length < selectedFmt.scenes) {
     base.push({
       heading: `Scene ${base.length + 1}`,
@@ -109,21 +150,32 @@ function normalizeScenes(rawScenes, selectedFmt, title) {
       duration: selectedFmt.dur,
     });
   }
-
   return base.map((scene, idx) => ({
     heading: (scene?.heading || `Scene ${idx + 1}`).toString().slice(0, 60),
     caption: (scene?.caption || "Key insight").toString().slice(0, 120),
-    voiceover: (scene?.voiceover || scene?.caption || "Interesting insight").toString().slice(0, 220),
+    voiceover: (scene?.voiceover || scene?.caption || "Interesting insight")
+      .toString()
+      .slice(0, 220),
     emoji: (scene?.emoji || "🎬").toString().slice(0, 2),
     duration: CLAMP(Number(scene?.duration) || selectedFmt.dur, 6, 12),
     videoTitle: title,
   }));
 }
 
-function renderScene(ctx, scene, progress, palette, sceneIdx, totalScenes, format, now) {
-  const W = format.w, H = format.h;
-  const isReel = format.id === "reel";
-  const t = now / 1000;
+function renderScene(
+  ctx,
+  scene,
+  progress,
+  palette,
+  sceneIdx,
+  totalScenes,
+  format,
+  now,
+) {
+  const W = format.w,
+    H = format.h,
+    isReel = format.id === "reel",
+    t = now / 1000;
 
   const grad = ctx.createLinearGradient(0, 0, isReel ? W : 0, isReel ? 0 : H);
   grad.addColorStop(0, palette.bg[0]);
@@ -131,7 +183,14 @@ function renderScene(ctx, scene, progress, palette, sceneIdx, totalScenes, forma
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, W, H);
 
-  const vignette = ctx.createRadialGradient(W * 0.5, H * 0.45, H * 0.2, W * 0.5, H * 0.5, H * 0.95);
+  const vignette = ctx.createRadialGradient(
+    W * 0.5,
+    H * 0.45,
+    H * 0.2,
+    W * 0.5,
+    H * 0.5,
+    H * 0.95,
+  );
   vignette.addColorStop(0, "transparent");
   vignette.addColorStop(1, "#00000066");
   ctx.fillStyle = vignette;
@@ -149,30 +208,46 @@ function renderScene(ctx, scene, progress, palette, sceneIdx, totalScenes, forma
   }
 
   ctx.save();
-  ctx.globalAlpha = 0.18;
+  ctx.globalAlpha = 0.15;
   ctx.translate(W * 0.5, H * 0.5);
   ctx.rotate(t * 0.16);
   for (let i = 0; i < 3; i++) {
-    ctx.strokeStyle = `${palette.accent}${i === 1 ? "77" : "33"}`;
+    ctx.strokeStyle = `${palette.accent}${i === 1 ? "66" : "22"}`;
     ctx.lineWidth = 1 + i;
-    ctx.strokeRect(-W * (0.12 + i * 0.1), -H * (0.12 + i * 0.1), W * (0.24 + i * 0.2), H * (0.24 + i * 0.2));
+    ctx.strokeRect(
+      -W * (0.12 + i * 0.1),
+      -H * (0.12 + i * 0.1),
+      W * (0.24 + i * 0.2),
+      H * (0.24 + i * 0.2),
+    );
   }
   ctx.restore();
 
   ctx.strokeStyle = "#ffffff04";
   ctx.lineWidth = 1;
   const step = isReel ? 60 : 80;
-  for (let x = 0; x < W; x += step) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
-  for (let y = 0; y < H; y += step) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+  for (let x = 0; x < W; x += step) {
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, H);
+    ctx.stroke();
+  }
+  for (let y = 0; y < H; y += step) {
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(W, y);
+    ctx.stroke();
+  }
 
   const raw = Math.min(1, progress * 3.5);
   const ease = raw < 0.5 ? 2 * raw * raw : 1 - Math.pow(-2 * raw + 2, 2) / 2;
   const alpha = Math.min(1, progress * 4);
-  const slideX = isReel ? 0 : (1 - ease) * -W * 0.18;
-  const slideY = isReel ? (1 - ease) * H * 0.12 : 0;
 
   ctx.save();
-  ctx.translate(slideX, slideY);
+  ctx.translate(
+    isReel ? 0 : (1 - ease) * -W * 0.18,
+    isReel ? (1 - ease) * H * 0.12 : 0,
+  );
   ctx.globalAlpha = alpha;
 
   if (isReel) {
@@ -184,31 +259,56 @@ function renderScene(ctx, scene, progress, palette, sceneIdx, totalScenes, forma
 
     ctx.globalAlpha = alpha;
     ctx.fillStyle = palette.accent + "22";
-    ctx.beginPath(); ctx.roundRect(cx - 60, H * 0.32, 120, 28, 14); ctx.fill();
+    ctx.beginPath();
+    ctx.roundRect(cx - 60, H * 0.32, 120, 28, 14);
+    ctx.fill();
     ctx.font = "bold 11px monospace";
     ctx.fillStyle = palette.accent;
     ctx.fillText(`◉  ${sceneIdx + 1} / ${totalScenes}`, cx, H * 0.32 + 19);
 
-    ctx.font = `900 ${Math.min(68, W * 0.094)}px 'Arial Black', sans-serif`;
+    ctx.font = `900 ${Math.min(68, W * 0.094)}px 'Arial Black',sans-serif`;
     ctx.fillStyle = palette.text;
     ctx.textAlign = "center";
-    const hWords = (scene.heading || "").split(" ");
-    let hL = "", hLs = [];
-    for (const w of hWords) { const test = hL + w + " "; if (ctx.measureText(test).width > W * 0.88 && hL) { hLs.push(hL.trim()); hL = w + " "; } else hL = test; }
+    const hW = (scene.heading || "").split(" ");
+    let hL = "",
+      hLs = [];
+    for (const w of hW) {
+      const t2 = hL + w + " ";
+      if (ctx.measureText(t2).width > W * 0.88 && hL) {
+        hLs.push(hL.trim());
+        hL = w + " ";
+      } else hL = t2;
+    }
     if (hL) hLs.push(hL.trim());
     const hY = H * 0.42;
     hLs.forEach((l, i) => ctx.fillText(l, cx, hY + i * 76));
     ctx.fillStyle = palette.accent;
-    ctx.fillRect(cx - Math.min(100, W * 0.2), hY + hLs.length * 76, Math.min(200, W * 0.4), 4);
+    ctx.fillRect(
+      cx - Math.min(100, W * 0.2),
+      hY + hLs.length * 76,
+      Math.min(200, W * 0.4),
+      4,
+    );
 
     ctx.globalAlpha = Math.min(1, Math.max(0, progress * 5 - 0.6));
-    ctx.font = `${Math.min(28, W * 0.038)}px Georgia, serif`;
+    ctx.font = `${Math.min(28, W * 0.038)}px Georgia,serif`;
     ctx.fillStyle = "#ffffffbb";
-    const sWords = (scene.caption || "").split(" ");
-    let sL = "", sLs = [];
-    for (const w of sWords) { const test = sL + w + " "; if (ctx.measureText(test).width > W * 0.85 && sL) { sLs.push(sL.trim()); sL = w + " "; } else sL = test; }
+    const sW = (scene.caption || "").split(" ");
+    let sL = "",
+      sLs = [];
+    for (const w of sW) {
+      const t2 = sL + w + " ";
+      if (ctx.measureText(t2).width > W * 0.85 && sL) {
+        sLs.push(sL.trim());
+        sL = w + " ";
+      } else sL = t2;
+    }
     if (sL) sLs.push(sL.trim());
-    sLs.slice(0, 3).forEach((l, i) => ctx.fillText(l, cx, hY + hLs.length * 76 + 36 + i * 36));
+    sLs
+      .slice(0, 3)
+      .forEach((l, i) =>
+        ctx.fillText(l, cx, hY + hLs.length * 76 + 36 + i * 36),
+      );
   } else {
     ctx.globalAlpha = alpha * 0.4;
     ctx.font = `${H * 0.6}px serif`;
@@ -218,29 +318,49 @@ function renderScene(ctx, scene, progress, palette, sceneIdx, totalScenes, forma
     ctx.globalAlpha = alpha;
     ctx.textAlign = "left";
     ctx.fillStyle = palette.accent + "22";
-    ctx.beginPath(); ctx.roundRect(36, 100, 140, 30, 15); ctx.fill();
+    ctx.beginPath();
+    ctx.roundRect(36, 100, 140, 30, 15);
+    ctx.fill();
     ctx.font = "bold 12px monospace";
     ctx.fillStyle = palette.accent;
     ctx.fillText(`◉  SCENE ${sceneIdx + 1} / ${totalScenes}`, 50, 121);
 
-    ctx.font = `900 ${Math.min(76, W * 0.058)}px 'Arial Black', sans-serif`;
+    ctx.font = `900 ${Math.min(76, W * 0.058)}px 'Arial Black',sans-serif`;
     ctx.fillStyle = palette.text;
-    const hWords = (scene.heading || "").split(" ");
-    let hL = "", hLs = [];
-    for (const w of hWords) { const test = hL + w + " "; if (ctx.measureText(test).width > W * 0.62 && hL) { hLs.push(hL.trim()); hL = w + " "; } else hL = test; }
+    const hW = (scene.heading || "").split(" ");
+    let hL = "",
+      hLs = [];
+    for (const w of hW) {
+      const t2 = hL + w + " ";
+      if (ctx.measureText(t2).width > W * 0.62 && hL) {
+        hLs.push(hL.trim());
+        hL = w + " ";
+      } else hL = t2;
+    }
     if (hL) hLs.push(hL.trim());
     hLs.forEach((l, i) => ctx.fillText(l, 36, 200 + i * 86));
     ctx.fillStyle = palette.accent;
     ctx.fillRect(36, 200 + hLs.length * 86, 220, 4);
 
     ctx.globalAlpha = Math.min(1, Math.max(0, progress * 5 - 0.5));
-    ctx.font = `${Math.min(28, W * 0.022)}px Georgia, serif`;
+    ctx.font = `${Math.min(28, W * 0.022)}px Georgia,serif`;
     ctx.fillStyle = "#ffffffaa";
-    const sWords = (scene.caption || "").split(" ");
-    let sL = "", sLs = [];
-    for (const w of sWords) { const test = sL + w + " "; if (ctx.measureText(test).width > W * 0.58 && sL) { sLs.push(sL.trim()); sL = w + " "; } else sL = test; }
+    const sW = (scene.caption || "").split(" ");
+    let sL = "",
+      sLs = [];
+    for (const w of sW) {
+      const t2 = sL + w + " ";
+      if (ctx.measureText(t2).width > W * 0.58 && sL) {
+        sLs.push(sL.trim());
+        sL = w + " ";
+      } else sL = t2;
+    }
     if (sL) sLs.push(sL.trim());
-    sLs.slice(0, 3).forEach((l, i) => ctx.fillText(l, 36, 200 + hLs.length * 86 + 42 + i * 38));
+    sLs
+      .slice(0, 3)
+      .forEach((l, i) =>
+        ctx.fillText(l, 36, 200 + hLs.length * 86 + 42 + i * 38),
+      );
   }
 
   ctx.restore();
@@ -253,27 +373,29 @@ function renderScene(ctx, scene, progress, palette, sceneIdx, totalScenes, forma
   ctx.fillStyle = capGrad;
   ctx.fillRect(0, H - capH, W, capH);
 
-  const shineX = ((t * (isReel ? 130 : 170)) % (W + 260)) - 260;
-  const shine = ctx.createLinearGradient(shineX, 0, shineX + 240, 0);
-  shine.addColorStop(0, "transparent");
-  shine.addColorStop(0.45, `${palette.accent}00`);
-  shine.addColorStop(0.5, `${palette.accent}66`);
-  shine.addColorStop(0.55, `${palette.accent}00`);
-  shine.addColorStop(1, "transparent");
-  ctx.fillStyle = shine;
-  ctx.fillRect(0, H - capH, W, capH);
-
   ctx.globalAlpha = Math.min(1, Math.max(0, progress * 6 - 0.4));
-  ctx.font = `bold ${isReel ? 22 : 18}px 'Segoe UI', sans-serif`;
+  ctx.font = `bold ${isReel ? 22 : 18}px 'Segoe UI',sans-serif`;
   ctx.textAlign = "center";
   ctx.fillStyle = "#ffffff";
-  const vWords = (scene.voiceover || "").split(" ");
-  let vL = "", vLs = [];
-  for (const w of vWords) { const test = vL + w + " "; if (ctx.measureText(test).width > W * 0.88 && vL) { vLs.push(vL.trim()); vL = w + " "; } else vL = test; }
+  const vW = (scene.voiceover || "").split(" ");
+  let vL = "",
+    vLs = [];
+  for (const w of vW) {
+    const t2 = vL + w + " ";
+    if (ctx.measureText(t2).width > W * 0.88 && vL) {
+      vLs.push(vL.trim());
+      vL = w + " ";
+    } else vL = t2;
+  }
   if (vL) vLs.push(vL.trim());
   const visVo = vLs.slice(0, 2);
   const voY = H - (isReel ? 65 : 50) + (visVo.length === 1 ? 14 : 0);
-  visVo.forEach((l, i) => { ctx.shadowColor = "#000"; ctx.shadowBlur = 8; ctx.fillText(l, W / 2, voY + i * 28); ctx.shadowBlur = 0; });
+  visVo.forEach((l, i) => {
+    ctx.shadowColor = "#000";
+    ctx.shadowBlur = 8;
+    ctx.fillText(l, W / 2, voY + i * 28);
+    ctx.shadowBlur = 0;
+  });
 
   ctx.globalAlpha = 1;
   ctx.fillStyle = "#ffffff10";
@@ -287,14 +409,14 @@ function renderScene(ctx, scene, progress, palette, sceneIdx, totalScenes, forma
 
   ctx.fillStyle = "#00000055";
   ctx.fillRect(0, 0, W, isReel ? 52 : 48);
-  ctx.font = `bold ${isReel ? 14 : 13}px 'Segoe UI', sans-serif`;
+  ctx.font = `bold ${isReel ? 14 : 13}px 'Segoe UI',sans-serif`;
   ctx.textAlign = "center";
   ctx.fillStyle = "#ffffffcc";
   ctx.fillText(scene.videoTitle || "", W / 2, isReel ? 34 : 32);
 
   if (progress > 0 && progress < 0.99) {
-    const wX = isReel ? W / 2 - 30 : W - 80;
-    const wY = isReel ? H - 92 : 22;
+    const wX = isReel ? W / 2 - 30 : W - 80,
+      wY = isReel ? H - 92 : 22;
     for (let i = 0; i < 12; i++) {
       const bH = 6 + 10 * Math.abs(Math.sin(t * 5 + i * 0.7));
       ctx.fillStyle = palette.accent + "99";
@@ -319,86 +441,61 @@ export default function AutoVideoMaker() {
   const [contentStyle, setContentStyle] = useState("educational");
   const [voiceStyle, setVoiceStyle] = useState("energetic");
   const [insights, setInsights] = useState([]);
-  const [openRouterKey, setOpenRouterKey] = useState(() => localStorage.getItem(OPENROUTER_KEY_STORAGE) || "");
 
   const canvasRef = useRef(null);
-  const audioElRef = useRef(null);
   const rafRef = useRef(null);
   const recRef = useRef(null);
   const chunksRef = useRef([]);
   const stopRef = useRef(false);
   const paletteRef = useRef(PALETTES[0]);
-  const cloudTtsUnavailableRef = useRef(false);
 
   const activeFormat = FORMATS.find((f) => f.id === format) || FORMATS[0];
-  const maskedKeyPreview = useMemo(() => {
-    const k = openRouterKey.trim();
-    if (!k) return "";
-    if (k.length <= 12) return `${k.slice(0, 4)}••••`;
-    return `${k.slice(0, 8)}••••${k.slice(-4)}`;
-  }, [openRouterKey]);
-  const addStatus = useCallback((msg) => {
-    setStatusLines((prev) => [...prev.slice(-4), msg]);
-  }, []);
+  const addStatus = useCallback(
+    (msg) => setStatusLines((prev) => [...prev.slice(-4), msg]),
+    [],
+  );
 
-  useEffect(() => {
-    const onWindowError = (event) => {
-      const source = `${event?.filename || ""} ${event?.message || ""}`;
-      if (isNoiseFromChromeExtensionIssue(source)) {
-        event.preventDefault();
+  const speakScene = (text, selectedLanguage, selectedVoiceStyle) =>
+    new Promise((resolve) => {
+      if (!window.speechSynthesis) return resolve();
+      window.speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance(text);
+      const voiceCfg =
+        VOICE_STYLES.find((v) => v.id === selectedVoiceStyle) ||
+        VOICE_STYLES[0];
+      u.rate = voiceCfg.rate;
+      u.pitch = voiceCfg.pitch;
+      u.volume = 1;
+      const langHint =
+        LANGUAGES.find((l) => l.id === selectedLanguage)?.ttsHint || "en";
+      const trySpeak = () => {
+        const voices = window.speechSynthesis.getVoices();
+        const v =
+          voices.find(
+            (v) =>
+              v.lang.toLowerCase().startsWith(langHint) &&
+              (v.name.includes("Google") || v.name.includes("Natural")),
+          ) ||
+          voices.find((v) => v.lang.toLowerCase().startsWith(langHint)) ||
+          voices.find((v) => v.lang.toLowerCase().startsWith("en")) ||
+          voices[0];
+        if (v) u.voice = v;
+        u.onend = resolve;
+        u.onerror = resolve;
+        window.speechSynthesis.speak(u);
+      };
+      if (window.speechSynthesis.getVoices().length > 0) trySpeak();
+      else {
+        window.speechSynthesis.onvoiceschanged = trySpeak;
+        setTimeout(resolve, 12000);
       }
-    };
-
-    const onUnhandledRejection = (event) => {
-      const reason = event?.reason;
-      const message = typeof reason === "string"
-        ? reason
-        : (reason?.message || "");
-      if (isNoiseFromChromeExtensionIssue(message)) {
-        event.preventDefault();
-      }
-    };
-
-    window.addEventListener("error", onWindowError);
-    window.addEventListener("unhandledrejection", onUnhandledRejection);
-    return () => {
-      window.removeEventListener("error", onWindowError);
-      window.removeEventListener("unhandledrejection", onUnhandledRejection);
-    };
-  }, []);
-
-
-  const speakScene = (text, selectedLanguage, selectedVoiceStyle) => new Promise(resolve => {
-    if (!window.speechSynthesis) return resolve();
-    window.speechSynthesis.cancel();
-    const u = new SpeechSynthesisUtterance(text);
-    const voiceCfg = VOICE_STYLES.find(v => v.id === selectedVoiceStyle) || VOICE_STYLES[0];
-    u.rate = voiceCfg.rate;
-    u.pitch = voiceCfg.pitch;
-    u.volume = 1;
-    const voices = window.speechSynthesis.getVoices();
-    const langHint = LANGUAGES.find(l => l.id === selectedLanguage)?.ttsHint || "en";
-    const v = voices.find(voice => voice.lang.toLowerCase().startsWith(langHint) && (voice.name.includes("Google") || voice.name.includes("Natural")))
-      || voices.find(voice => voice.lang.toLowerCase().startsWith(langHint))
-      || voices.find(voice => voice.lang.toLowerCase().startsWith("en"))
-      || voices[0];
-    if (v) u.voice = v;
-    u.onend = resolve; u.onerror = resolve;
-    window.speechSynthesis.speak(u);
-  });
-
-  const playCapturedNarration = useCallback(async () => {
-    if (cloudTtsUnavailableRef.current) return false;
-
-    cloudTtsUnavailableRef.current = true;
-    addStatus("ℹ️ Cloud TTS abhi available nahi. Browser voice fallback use ho raha hai.");
-    return false;
-  }, [addStatus]);
+    });
 
   const makeVideo = useCallback(async () => {
     const scriptMode = contentInputMode === "script";
     if (phase === "thinking" || phase === "recording") return;
     if (!topic.trim() && !customScript.trim()) return;
+
     stopRef.current = false;
     setPhase("thinking");
     setVideoUrl(null);
@@ -412,13 +509,12 @@ export default function AutoVideoMaker() {
     addStatus("🤖 AI scene plan bana raha hai...");
 
     const contentSource = scriptMode
-      ? `Use this user-written script as the source of truth. Keep the meaning but optimize for short-video delivery:\n${customScript}`
+      ? `Use this user-written script as source. Optimize for short-video delivery:\n${customScript}`
       : `Topic: "${topic}"`;
 
-    const prompt = `You are a viral social media video creator + research assistant. Create a complete ${selectedFmt.label}.
+    const prompt = `You are a viral social media video creator. Create a complete ${selectedFmt.label}.
 
 ${contentSource}
-
 Language: ${language}
 Content style: ${contentStyle}
 Voice style: ${voiceStyle}
@@ -426,13 +522,13 @@ Voice style: ${voiceStyle}
 Return ONLY valid JSON (no backticks, no markdown):
 {
   "title": "catchy title max 50 chars",
-  "insights": ["3-5 short bullets with related facts/context"],
+  "insights": ["3-5 short related fact bullets"],
   "scenes": [
     {
       "heading": "3-5 word punchy title",
-      "caption": "one line key fact or insight (max 12 words)",
-      "voiceover": "natural speech 20-28 words. energetic and engaging.",
-      "emoji": "most relevant single emoji",
+      "caption": "one line key fact max 12 words",
+      "voiceover": "natural speech 20-28 words energetic and engaging",
+      "emoji": "one emoji",
       "duration": 9
     }
   ]
@@ -441,54 +537,50 @@ Return ONLY valid JSON (no backticks, no markdown):
 Rules:
 - Exactly ${selectedFmt.scenes} scenes
 - Scene 1: powerful hook
-- Scene ${selectedFmt.scenes}: CTA (like, follow, share)
+- Scene ${selectedFmt.scenes}: CTA (like follow share)
 - Each voiceover = 20-28 words only
-- Duration 8-10 seconds per scene
-- Keep language strictly in ${language}
-- Tone should match this style: ${contentStyle}
-- Make it VIRAL and engaging
-- If user script is provided, preserve the same narrative flow (hook -> body -> ending)
-- insights should summarize key related details that help audience understand the script better`;
+- Duration 8-10 sec per scene
+- Language strictly: ${language}
+- Tone: ${contentStyle}
+- Make it VIRAL`;
 
-    let scenes = [];
-    let title = "";
-    let aiInsights = [];
+    let scenes = [],
+      title = "",
+      aiInsights = [];
 
     try {
-      const apiKey = resolveOpenRouterKey(openRouterKey);
+      // ✅ Key sirf .env se aati hai
+      const apiKey = getOpenRouterKey();
 
       const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${apiKey}`,
+          Authorization: `Bearer ${apiKey}`,
           "HTTP-Referer": window.location.origin,
           "X-Title": "Auto Video AI",
         },
         body: JSON.stringify({
-          model: "anthropic/claude-3-sonnet",
+          model: "anthropic/claude-3-haiku",
           max_tokens: 4000,
           messages: [{ role: "user", content: prompt }],
         }),
       });
 
-      const data = await res.json();
       if (!res.ok) {
-        const apiError = data?.error?.message || `OpenRouter request failed (${res.status})`;
-        if (res.status === 401) {
-          localStorage.removeItem(OPENROUTER_KEY_STORAGE);
-          setOpenRouterKey("");
-          throw new Error("401 Unauthorized: OpenRouter key reject ho gayi. Nayi valid key Settings me paste karo.");
-        }
-        throw new Error(apiError);
+        const data = await res.json();
+        const errMsg = data?.error?.message || `HTTP ${res.status}`;
+        if (res.status === 401)
+          throw new Error(
+            "401: OpenRouter key galat hai. .env file check karo.",
+          );
+        throw new Error(errMsg);
       }
 
-      const content = data?.choices?.[0]?.message?.content ?? data?.content;
-      const raw = Array.isArray(content)
-        ? content.map(block => block?.text || block?.content || "").join("")
-        : (typeof content === "string" ? content : "");
-
-      if (!raw.trim()) throw new Error("AI response empty tha");
+      const data = await res.json();
+      const content = data?.choices?.[0]?.message?.content || "";
+      const raw = typeof content === "string" ? content : "";
+      if (!raw.trim()) throw new Error("AI response khaali tha");
 
       const clean = raw.replace(/```json\n?|```/g, "").trim();
       const jsonText = clean.match(/\{[\s\S]*\}/)?.[0] || clean;
@@ -497,22 +589,28 @@ Rules:
       scenes = Array.isArray(parsed?.scenes) ? parsed.scenes : [];
       title = (parsed?.title || topic || "Auto Video").toString().slice(0, 56);
       aiInsights = Array.isArray(parsed?.insights)
-        ? parsed.insights.map((item) => item?.toString().trim()).filter(Boolean).slice(0, 5)
+        ? parsed.insights
+            .map((i) => i?.toString().trim())
+            .filter(Boolean)
+            .slice(0, 5)
         : [];
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Dobara try karo.";
-      console.error("Scene generation failed", err);
+      console.error("Scene gen failed:", err);
       addStatus(`⚠️ AI error: ${msg}`);
-      addStatus("🛟 Fallback script use kiya gaya taaki video generation rukay nahi.");
-      const fallbackTopic = topic || customScript.split("\n")[0] || "Auto Video";
-      title = `${fallbackTopic.slice(0, 38)}${fallbackTopic.length > 38 ? "..." : ""}` || "Auto Video";
-      scenes = fallbackScenes(fallbackTopic, selectedFmt, language, contentStyle);
-      aiInsights = ["AI insights unavailable. Retry with API key for related facts."];
+      addStatus("🛟 Fallback scenes use ho rahe hain...");
+      const fbTopic = topic || customScript.split("\n")[0] || "Video";
+      title = fbTopic.slice(0, 50);
+      scenes = fallbackScenes(fbTopic, selectedFmt, language, contentStyle);
+      aiInsights = [];
     }
 
     scenes = normalizeScenes(scenes, selectedFmt, title);
-
-    if (!scenes.length) { setPhase("error"); addStatus("❌ Scenes nahi bani. Try again."); return; }
+    if (!scenes.length) {
+      setPhase("error");
+      addStatus("❌ Scenes nahi bani. Try again.");
+      return;
+    }
 
     setVideoTitle(title);
     setInsights(aiInsights);
@@ -524,25 +622,36 @@ Rules:
     canvas.width = selectedFmt.w;
     canvas.height = selectedFmt.h;
     const ctx = canvas.getContext("2d");
-    renderScene(ctx, scenes[0], 0, paletteRef.current, 0, scenes.length, selectedFmt, Date.now());
+    renderScene(
+      ctx,
+      scenes[0],
+      0,
+      paletteRef.current,
+      0,
+      scenes.length,
+      selectedFmt,
+      Date.now(),
+    );
 
     chunksRef.current = [];
     let rec = null;
     try {
-      const videoStream = canvas.captureStream(30);
-      const audioEl = audioElRef.current;
-      const capturedAudioStream = audioEl
-        ? (audioEl.captureStream?.() || audioEl.mozCaptureStream?.())
-        : null;
-      const mixedTracks = [...videoStream.getVideoTracks(), ...(capturedAudioStream?.getAudioTracks?.() || [])];
-      const stream = new MediaStream(mixedTracks);
-      const mime = MediaRecorder.isTypeSupported("video/webm;codecs=vp9") ? "video/webm;codecs=vp9" : "video/webm";
-      rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 4000000 });
+      const stream = canvas.captureStream(30);
+      const mime = MediaRecorder.isTypeSupported("video/webm;codecs=vp9")
+        ? "video/webm;codecs=vp9"
+        : "video/webm";
+      rec = new MediaRecorder(stream, {
+        mimeType: mime,
+        videoBitsPerSecond: 4000000,
+      });
       recRef.current = rec;
-      rec.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
+      rec.ondataavailable = (e) => {
+        if (e.data.size > 0) chunksRef.current.push(e.data);
+      };
       rec.start(100);
-      addStatus("⚠️ Browser security ki wajah se speech voice export me include nahi hoti. Video silent download ho sakti hai.");
-    } catch { addStatus("⚠️ Recording supported nahi. Preview mode."); }
+    } catch {
+      addStatus("⚠️ Recording mode: preview only.");
+    }
 
     const totalDur = scenes.reduce((s, sc) => s + (sc.duration || 9), 0);
     let elapsed = 0;
@@ -554,19 +663,34 @@ Rules:
       setCurrentScene(i);
       addStatus(`🎬 Scene ${i + 1}/${scenes.length}: "${scene.heading}"`);
 
-      const speechPromise = (async () => {
-        const captured = await playCapturedNarration();
-        if (!captured) await speakScene(scene.voiceover || scene.heading, language, voiceStyle);
-      })();
+      const speechPromise = speakScene(
+        scene.voiceover || scene.heading,
+        language,
+        voiceStyle,
+      );
 
-      await new Promise(resolve => {
+      await new Promise((resolve) => {
         const sceneStart = Date.now();
         const animate = () => {
-          if (stopRef.current) { resolve(); return; }
+          if (stopRef.current) {
+            resolve();
+            return;
+          }
           const now = Date.now();
           const prog = Math.min(1, (now - sceneStart) / sceneDur);
-          renderScene(ctx, scene, prog, paletteRef.current, i, scenes.length, selectedFmt, now);
-          setProgress(Math.min(1, (elapsed + (now - sceneStart)) / (totalDur * 1000)));
+          renderScene(
+            ctx,
+            scene,
+            prog,
+            paletteRef.current,
+            i,
+            scenes.length,
+            selectedFmt,
+            now,
+          );
+          setProgress(
+            Math.min(1, (elapsed + (now - sceneStart)) / (totalDur * 1000)),
+          );
           if (prog < 1) rafRef.current = requestAnimationFrame(animate);
           else resolve();
         };
@@ -579,91 +703,210 @@ Rules:
 
     if (window.speechSynthesis) window.speechSynthesis.cancel();
 
-    if (rec && rec.state === "recording") {
-      await new Promise(resolve => {
+    if (rec?.state === "recording") {
+      await new Promise((resolve) => {
         rec.onstop = () => {
           const blob = new Blob(chunksRef.current, { type: "video/webm" });
           setVideoUrl(URL.createObjectURL(blob));
           resolve();
         };
-        rec.stop();
+        setTimeout(() => {
+          try {
+            rec.stop();
+          } catch (e) {
+            resolve();
+          }
+        }, 400);
       });
     }
 
     setProgress(1);
     setPhase("done");
-    addStatus("🎉 Video ready! Neeche download karo.");
-  }, [topic, customScript, contentInputMode, format, phase, language, contentStyle, voiceStyle, playCapturedNarration, addStatus, openRouterKey]);
-
-  const saveApiKey = () => {
-    const cleaned = openRouterKey.trim();
-    localStorage.setItem(OPENROUTER_KEY_STORAGE, cleaned);
-    addStatus("🔐 OpenRouter key browser me save ho gayi.");
-  };
-
-  const clearApiKey = () => {
-    setOpenRouterKey("");
-    localStorage.removeItem(OPENROUTER_KEY_STORAGE);
-    addStatus("🧹 Saved API key clear kar di gayi.");
-  };
+    addStatus("🎉 Video taiyar! Neeche download karo.");
+  }, [
+    topic,
+    customScript,
+    contentInputMode,
+    format,
+    phase,
+    language,
+    contentStyle,
+    voiceStyle,
+    addStatus,
+  ]);
 
   const stopAll = () => {
     stopRef.current = true;
     if (rafRef.current) cancelAnimationFrame(rafRef.current);
     if (window.speechSynthesis) window.speechSynthesis.cancel();
-    if (recRef.current?.state === "recording") {
+    if (recRef.current?.state === "recording")
       try {
         recRef.current.stop();
-      } catch {
-        // Ignore stop failures when recorder is already shutting down
-      }
-    }
+      } catch {}
     setPhase("idle");
-    addStatus("⏹ Roka gaya.");
+    addStatus("⏹ Rok diya.");
   };
 
   const displayH = format === "reel" ? 460 : 300;
-  const displayW = format === "reel" ? Math.round(460 * (9 / 16)) : Math.round(300 * (16 / 9));
+  const displayW =
+    format === "reel" ? Math.round(460 * (9 / 16)) : Math.round(300 * (16 / 9));
   const isWorking = phase === "thinking" || phase === "recording";
+  const canGenerate = topic.trim() || customScript.trim();
 
   return (
-    <div style={{ minHeight: "100vh", background: "#050508", color: "#e8e8f5", fontFamily: "'Segoe UI', system-ui, sans-serif", display: "flex", flexDirection: "column", alignItems: "center" }}>
+    <div
+      style={{
+        minHeight: "100vh",
+        background: "#050508",
+        color: "#e8e8f5",
+        fontFamily: "'Segoe UI',system-ui,sans-serif",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+      }}
+    >
       <style>{`
-        @keyframes glow { 0%,100%{box-shadow:0 0 20px #c084fc40} 50%{box-shadow:0 0 40px #c084fc80} }
-        @keyframes fadeUp { from{opacity:0;transform:translateY(14px)} to{opacity:1;transform:translateY(0)} }
-        @keyframes recPulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.6;transform:scale(0.95)} }
-        @keyframes statusIn { from{opacity:0;transform:translateX(-10px)} to{opacity:1;transform:translateX(0)} }
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        ::-webkit-scrollbar { width: 3px; }
-        ::-webkit-scrollbar-thumb { background: #2a2a45; border-radius: 3px; }
-        textarea { outline: none; }
+        @keyframes glow{0%,100%{box-shadow:0 0 20px #c084fc40}50%{box-shadow:0 0 40px #c084fc80}}
+        @keyframes fadeUp{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}
+        @keyframes recPulse{0%,100%{opacity:1}50%{opacity:0.5}}
+        @keyframes statusIn{from{opacity:0;transform:translateX(-8px)}to{opacity:1;transform:translateX(0)}}
+        *{box-sizing:border-box;margin:0;padding:0}
+        ::-webkit-scrollbar{width:3px}
+        ::-webkit-scrollbar-thumb{background:#2a2a45;border-radius:3px}
+        textarea,select{outline:none}
+        select{background:#0a0a14;border:1.5px solid #16162e;border-radius:10px;color:#cbd5e1;padding:10px;width:100%;font-size:12px;cursor:pointer}
+        select:disabled{opacity:0.5}
       `}</style>
 
-      <div style={{ width: "100%", borderBottom: "1px solid #10101e", padding: "14px 24px", display: "flex", alignItems: "center", gap: 12, background: "#07070d" }}>
-        <div style={{ width: 36, height: 36, background: "linear-gradient(135deg,#7c3aed,#c026d3)", borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, flexShrink: 0 }}>⚡</div>
+      {/* Header */}
+      <div
+        style={{
+          width: "100%",
+          borderBottom: "1px solid #10101e",
+          padding: "14px 24px",
+          display: "flex",
+          alignItems: "center",
+          gap: 12,
+          background: "#07070d",
+        }}
+      >
+        <div
+          style={{
+            width: 36,
+            height: 36,
+            background: "linear-gradient(135deg,#7c3aed,#c026d3)",
+            borderRadius: 8,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontSize: 18,
+            flexShrink: 0,
+          }}
+        >
+          ⚡
+        </div>
         <div>
-          <div style={{ fontWeight: 800, fontSize: 16, letterSpacing: -0.4 }}>Auto Video AI</div>
-          <div style={{ fontSize: 10, color: "#3a3a5a", letterSpacing: 1.5, textTransform: "uppercase" }}>Topic → Full Video. Automatic.</div>
+          <div style={{ fontWeight: 800, fontSize: 16, letterSpacing: -0.4 }}>
+            Auto Video AI
+          </div>
+          <div
+            style={{
+              fontSize: 10,
+              color: "#3a3a5a",
+              letterSpacing: 1.5,
+              textTransform: "uppercase",
+            }}
+          >
+            Topic → Full Animated Video. Automatic.
+          </div>
         </div>
         {isWorking && (
-          <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8, background: "#1a0a30", border: "1px solid #3d1f6e", borderRadius: 20, padding: "5px 14px", animation: "recPulse 1.5s infinite" }}>
-            <div style={{ width: 7, height: 7, borderRadius: "50%", background: phase === "recording" ? "#ef4444" : "#c084fc" }} />
-            <span style={{ fontSize: 11, color: "#c084fc", fontWeight: 700 }}>{phase === "recording" ? "REC" : "THINKING"}</span>
+          <div
+            style={{
+              marginLeft: "auto",
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              background: "#1a0a30",
+              border: "1px solid #3d1f6e",
+              borderRadius: 20,
+              padding: "5px 14px",
+              animation: "recPulse 1.2s infinite",
+            }}
+          >
+            <div
+              style={{
+                width: 7,
+                height: 7,
+                borderRadius: "50%",
+                background: phase === "recording" ? "#ef4444" : "#c084fc",
+              }}
+            />
+            <span style={{ fontSize: 11, color: "#c084fc", fontWeight: 700 }}>
+              {phase === "recording" ? "● REC" : "● THINKING"}
+            </span>
           </div>
         )}
       </div>
 
-      <div style={{ width: "100%", maxWidth: 900, padding: "28px 20px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 28, alignItems: "start" }}>
-
-        <div style={{ display: "flex", flexDirection: "column", gap: 18, animation: "fadeUp 0.4s ease" }}>
+      {/* Main */}
+      <div
+        style={{
+          width: "100%",
+          maxWidth: 900,
+          padding: "24px 20px",
+          display: "grid",
+          gridTemplateColumns: "1fr 1fr",
+          gap: 24,
+          alignItems: "start",
+        }}
+      >
+        {/* LEFT */}
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: 16,
+            animation: "fadeUp 0.4s ease",
+          }}
+        >
+          {/* Mode Toggle */}
           <div>
-            <div style={{ fontSize: 10, letterSpacing: 2.5, color: "#3a3a5a", fontWeight: 700, textTransform: "uppercase", marginBottom: 10 }}>CONTENT INPUT</div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+            <div
+              style={{
+                fontSize: 10,
+                letterSpacing: 2.5,
+                color: "#3a3a5a",
+                fontWeight: 700,
+                textTransform: "uppercase",
+                marginBottom: 8,
+              }}
+            >
+              CONTENT MODE
+            </div>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1fr 1fr",
+                gap: 8,
+              }}
+            >
               {CONTENT_INPUT_MODES.map((mode) => (
                 <button
                   key={mode.id}
                   onClick={() => !isWorking && setContentInputMode(mode.id)}
-                  style={{ background: contentInputMode === mode.id ? "#1a0a30" : "#0a0a14", border: `1.5px solid ${contentInputMode === mode.id ? "#7c3aed" : "#16162e"}`, color: contentInputMode === mode.id ? "#c084fc" : "#4c4c72", borderRadius: 10, padding: "10px 8px", fontSize: 12, fontWeight: 700, cursor: isWorking ? "default" : "pointer" }}
+                  style={{
+                    background:
+                      contentInputMode === mode.id ? "#1a0a30" : "#0a0a14",
+                    border: `1.5px solid ${contentInputMode === mode.id ? "#7c3aed" : "#16162e"}`,
+                    color: contentInputMode === mode.id ? "#c084fc" : "#4c4c72",
+                    borderRadius: 10,
+                    padding: "10px 8px",
+                    fontSize: 12,
+                    fontWeight: 700,
+                    cursor: isWorking ? "default" : "pointer",
+                    transition: "all 0.2s",
+                  }}
                 >
                   {mode.label}
                 </button>
@@ -671,154 +914,438 @@ Rules:
             </div>
           </div>
 
+          {/* Topic */}
           <div>
-            <div style={{ fontSize: 10, letterSpacing: 2.5, color: "#3a3a5a", fontWeight: 700, textTransform: "uppercase", marginBottom: 8 }}>OPENROUTER KEY</div>
-            <input
-              type="password"
-              value={openRouterKey}
-              onChange={(e) => setOpenRouterKey(e.target.value)}
-              disabled={isWorking}
-              placeholder="sk-or-v1-..."
-              style={{ width: "100%", background: "#0a0a14", border: `1.5px solid ${openRouterKey.trim() ? "#16a34a" : "#16162e"}`, borderRadius: 12, padding: "12px 14px", color: "#e8e8f5", fontSize: 13 }}
-            />
-            <div style={{ marginTop: 7, display: "flex", gap: 8 }}>
-              <button onClick={saveApiKey} disabled={isWorking || !openRouterKey.trim()} style={{ background: "#0f172a", border: "1px solid #1e293b", color: "#93c5fd", borderRadius: 8, padding: "6px 10px", fontSize: 11, cursor: isWorking || !openRouterKey.trim() ? "default" : "pointer" }}>Save key</button>
-              <button onClick={clearApiKey} disabled={isWorking} style={{ background: "#1a0505", border: "1px solid #7f1d1d", color: "#fca5a5", borderRadius: 8, padding: "6px 10px", fontSize: 11, cursor: isWorking ? "default" : "pointer" }}>Clear</button>
+            <div
+              style={{
+                fontSize: 10,
+                letterSpacing: 2.5,
+                color: "#3a3a5a",
+                fontWeight: 700,
+                textTransform: "uppercase",
+                marginBottom: 8,
+              }}
+            >
+              📝 VIDEO TOPIC
             </div>
-            <div style={{ marginTop: 6, color: "#4c4c72", fontSize: 11 }}>
-              {maskedKeyPreview ? `Saved preview: ${maskedKeyPreview}` : "No key saved yet. Invalid key se 401 aata hai."}
-              <br />
-              Chrome extension wala ERR_FAILED ignore karo — app auto-filter kar rahi hai.
-            </div>
-          </div>
-
-          <div>
-            <div style={{ fontSize: 10, letterSpacing: 2.5, color: "#3a3a5a", fontWeight: 700, textTransform: "uppercase", marginBottom: 8 }}>VIDEO TOPIC</div>
             <textarea
               value={topic}
-              onChange={e => setTopic(e.target.value)}
+              onChange={(e) => setTopic(e.target.value)}
               disabled={isWorking}
-              placeholder={"e.g. 5 life-changing habits\ne.g. How black holes are formed\ne.g. Best street food in Pakistan"}
+              placeholder={
+                "Koi bhi topic likho:\n• 5 amazing AI tools 2025\n• Pakistan ki hidden history\n• Weight loss tips jo kaam karein"
+              }
               rows={4}
-              style={{ width: "100%", background: "#0a0a14", border: `1.5px solid ${topic ? "#7c3aed" : "#16162e"}`, borderRadius: 12, padding: "14px 16px", color: "#e8e8f5", fontSize: 14, lineHeight: 1.7, resize: "none", transition: "border-color 0.2s" }}
+              style={{
+                width: "100%",
+                background: "#0a0a14",
+                border: `1.5px solid ${topic ? "#7c3aed" : "#16162e"}`,
+                borderRadius: 12,
+                padding: "13px 15px",
+                color: "#e8e8f5",
+                fontSize: 13.5,
+                lineHeight: 1.7,
+                resize: "none",
+                transition: "border-color 0.2s",
+              }}
             />
           </div>
 
+          {/* Custom Script */}
           <div>
-            <div style={{ fontSize: 10, letterSpacing: 2.5, color: "#3a3a5a", fontWeight: 700, textTransform: "uppercase", marginBottom: 8 }}>USER SCRIPT (OPTIONAL)</div>
+            <div
+              style={{
+                fontSize: 10,
+                letterSpacing: 2.5,
+                color: "#3a3a5a",
+                fontWeight: 700,
+                textTransform: "uppercase",
+                marginBottom: 8,
+              }}
+            >
+              📄 CUSTOM SCRIPT (OPTIONAL)
+            </div>
             <textarea
               value={customScript}
               onChange={(e) => setCustomScript(e.target.value)}
               disabled={isWorking}
-              placeholder={"Hook:\nBody:\nEnding:\n\nApna script yahan paste karo, AI isko optimize + related insights dega."}
-              rows={6}
-              style={{ width: "100%", background: "#0a0a14", border: `1.5px solid ${customScript ? "#c026d3" : "#16162e"}`, borderRadius: 12, padding: "14px 16px", color: "#e8e8f5", fontSize: 13, lineHeight: 1.65, resize: "vertical" }}
+              placeholder={
+                "Apna script paste karo:\nHook: ...\nBody: ...\nEnding: ..."
+              }
+              rows={5}
+              style={{
+                width: "100%",
+                background: "#0a0a14",
+                border: `1.5px solid ${customScript ? "#c026d3" : "#16162e"}`,
+                borderRadius: 12,
+                padding: "13px 15px",
+                color: "#e8e8f5",
+                fontSize: 13,
+                lineHeight: 1.65,
+                resize: "vertical",
+                transition: "border-color 0.2s",
+              }}
             />
-            <div style={{ marginTop: 6, color: "#4c4c72", fontSize: 11 }}>
-              {contentInputMode === "script" ? "Script mode active: AI aapke flow ko preserve karega." : "Tip: better output ke liye Hook / Body / Ending format use karo."}
+            <div style={{ marginTop: 5, fontSize: 10, color: "#3a3a5a" }}>
+              {contentInputMode === "script"
+                ? "✅ Script mode: AI tera flow preserve karega"
+                : "💡 Topic mode: AI khud likhega"}
             </div>
           </div>
 
+          {/* Format */}
           <div>
-            <div style={{ fontSize: 10, letterSpacing: 2.5, color: "#3a3a5a", fontWeight: 700, textTransform: "uppercase", marginBottom: 10 }}>VIDEO FORMAT</div>
+            <div
+              style={{
+                fontSize: 10,
+                letterSpacing: 2.5,
+                color: "#3a3a5a",
+                fontWeight: 700,
+                textTransform: "uppercase",
+                marginBottom: 8,
+              }}
+            >
+              🎞️ FORMAT
+            </div>
             <div style={{ display: "flex", gap: 8 }}>
-              {FORMATS.map(f => (
-                <button key={f.id} onClick={() => !isWorking && setFormat(f.id)} style={{ flex: 1, background: format === f.id ? "#1a0a30" : "#0a0a14", border: `1.5px solid ${format === f.id ? "#7c3aed" : "#16162e"}`, color: format === f.id ? "#c084fc" : "#3a3a5a", borderRadius: 10, padding: "10px 8px", cursor: isWorking ? "default" : "pointer", fontSize: 12, fontWeight: 700, transition: "all 0.2s" }}>
+              {FORMATS.map((f) => (
+                <button
+                  key={f.id}
+                  onClick={() => !isWorking && setFormat(f.id)}
+                  style={{
+                    flex: 1,
+                    background: format === f.id ? "#1a0a30" : "#0a0a14",
+                    border: `1.5px solid ${format === f.id ? "#7c3aed" : "#16162e"}`,
+                    color: format === f.id ? "#c084fc" : "#3a3a5a",
+                    borderRadius: 10,
+                    padding: "10px 8px",
+                    cursor: isWorking ? "default" : "pointer",
+                    fontSize: 12,
+                    fontWeight: 700,
+                    transition: "all 0.2s",
+                  }}
+                >
                   <div style={{ fontSize: 20, marginBottom: 4 }}>{f.icon}</div>
                   {f.label}
-                  <div style={{ fontSize: 10, color: "#3a3a5a", marginTop: 2 }}>{f.scenes} scenes</div>
+                  <div style={{ fontSize: 9, color: "#3a3a5a", marginTop: 2 }}>
+                    {f.scenes} scenes
+                  </div>
                 </button>
               ))}
             </div>
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+          {/* Language + Voice */}
+          <div
+            style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}
+          >
             <div>
-              <div style={{ fontSize: 10, letterSpacing: 2, color: "#3a3a5a", fontWeight: 700, textTransform: "uppercase", marginBottom: 6 }}>Language</div>
+              <div
+                style={{
+                  fontSize: 10,
+                  letterSpacing: 2,
+                  color: "#3a3a5a",
+                  fontWeight: 700,
+                  textTransform: "uppercase",
+                  marginBottom: 6,
+                }}
+              >
+                Language
+              </div>
               <select
                 value={language}
                 onChange={(e) => setLanguage(e.target.value)}
                 disabled={isWorking}
-                style={{ width: "100%", background: "#0a0a14", border: "1.5px solid #16162e", borderRadius: 10, color: "#cbd5e1", padding: "10px" }}
               >
-                {LANGUAGES.map((lang) => <option key={lang.id} value={lang.id}>{lang.label}</option>)}
+                {LANGUAGES.map((l) => (
+                  <option key={l.id} value={l.id}>
+                    {l.label}
+                  </option>
+                ))}
               </select>
             </div>
-
             <div>
-              <div style={{ fontSize: 10, letterSpacing: 2, color: "#3a3a5a", fontWeight: 700, textTransform: "uppercase", marginBottom: 6 }}>Voice</div>
+              <div
+                style={{
+                  fontSize: 10,
+                  letterSpacing: 2,
+                  color: "#3a3a5a",
+                  fontWeight: 700,
+                  textTransform: "uppercase",
+                  marginBottom: 6,
+                }}
+              >
+                Voice Style
+              </div>
               <select
                 value={voiceStyle}
                 onChange={(e) => setVoiceStyle(e.target.value)}
                 disabled={isWorking}
-                style={{ width: "100%", background: "#0a0a14", border: "1.5px solid #16162e", borderRadius: 10, color: "#cbd5e1", padding: "10px" }}
               >
-                {VOICE_STYLES.map((voice) => <option key={voice.id} value={voice.id}>{voice.label}</option>)}
+                {VOICE_STYLES.map((v) => (
+                  <option key={v.id} value={v.id}>
+                    {v.label}
+                  </option>
+                ))}
               </select>
             </div>
           </div>
 
+          {/* Content Style */}
           <div>
-            <div style={{ fontSize: 10, letterSpacing: 2, color: "#3a3a5a", fontWeight: 700, textTransform: "uppercase", marginBottom: 6 }}>Content Style</div>
+            <div
+              style={{
+                fontSize: 10,
+                letterSpacing: 2,
+                color: "#3a3a5a",
+                fontWeight: 700,
+                textTransform: "uppercase",
+                marginBottom: 6,
+              }}
+            >
+              Content Style
+            </div>
             <select
               value={contentStyle}
               onChange={(e) => setContentStyle(e.target.value)}
               disabled={isWorking}
-              style={{ width: "100%", background: "#0a0a14", border: "1.5px solid #16162e", borderRadius: 10, color: "#cbd5e1", padding: "10px" }}
             >
-              {CONTENT_STYLES.map((style) => <option key={style.id} value={style.id}>{style.label}</option>)}
+              {CONTENT_STYLES.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.label}
+                </option>
+              ))}
             </select>
           </div>
 
+          {/* Generate Button */}
           {!isWorking ? (
-            <button onClick={makeVideo} disabled={!topic.trim() && !customScript.trim()} style={{ width: "100%", background: topic.trim() || customScript.trim() ? "linear-gradient(135deg, #7c3aed 0%, #c026d3 100%)" : "#0f0f1e", border: "none", borderRadius: 14, padding: "18px", color: topic.trim() || customScript.trim() ? "#fff" : "#2a2a45", fontSize: 16, fontWeight: 900, cursor: topic.trim() || customScript.trim() ? "pointer" : "default", transition: "all 0.3s", boxShadow: topic.trim() || customScript.trim() ? "0 6px 30px #7c3aed50" : "none", animation: topic.trim() || customScript.trim() ? "glow 3s infinite" : "none" }}>
-              {phase === "done" ? "🔄 Naya Video Banao" : "⚡ Video Banao — Automatic"}
+            <button
+              onClick={makeVideo}
+              disabled={!canGenerate}
+              style={{
+                width: "100%",
+                background: canGenerate
+                  ? "linear-gradient(135deg,#7c3aed,#c026d3)"
+                  : "#0f0f1e",
+                border: "none",
+                borderRadius: 14,
+                padding: "17px",
+                color: canGenerate ? "#fff" : "#2a2a45",
+                fontSize: 15,
+                fontWeight: 900,
+                cursor: canGenerate ? "pointer" : "default",
+                transition: "all 0.3s",
+                boxShadow: canGenerate ? "0 6px 30px #7c3aed50" : "none",
+                animation: canGenerate ? "glow 3s infinite" : "none",
+                letterSpacing: 0.3,
+              }}
+            >
+              {phase === "done"
+                ? "🔄 Naya Video Banao"
+                : "⚡ Video Banao — Automatic"}
             </button>
           ) : (
-            <button onClick={stopAll} style={{ width: "100%", background: "#1a0505", border: "1.5px solid #7f1d1d", borderRadius: 14, padding: "18px", color: "#ef4444", fontSize: 15, fontWeight: 800, cursor: "pointer" }}>
+            <button
+              onClick={stopAll}
+              style={{
+                width: "100%",
+                background: "#160505",
+                border: "1.5px solid #7f1d1d",
+                borderRadius: 14,
+                padding: "17px",
+                color: "#ef4444",
+                fontSize: 14,
+                fontWeight: 800,
+                cursor: "pointer",
+              }}
+            >
               ⏹ Rokna Hai
             </button>
           )}
 
+          {/* Progress */}
           {(isWorking || phase === "done") && (
             <div>
-              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-                <span style={{ fontSize: 10, color: "#3a3a5a", textTransform: "uppercase", letterSpacing: 1.5 }}>Progress</span>
-                <span style={{ fontSize: 10, color: "#7c3aed", fontWeight: 700 }}>{Math.round(progress * 100)}%</span>
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  marginBottom: 5,
+                }}
+              >
+                <span
+                  style={{
+                    fontSize: 10,
+                    color: "#3a3a5a",
+                    textTransform: "uppercase",
+                    letterSpacing: 1.5,
+                  }}
+                >
+                  Progress
+                </span>
+                <span
+                  style={{ fontSize: 10, color: "#7c3aed", fontWeight: 700 }}
+                >
+                  {Math.round(progress * 100)}%
+                </span>
               </div>
-              <div style={{ height: 6, background: "#10101e", borderRadius: 6, overflow: "hidden" }}>
-                <div style={{ height: "100%", background: "linear-gradient(90deg, #7c3aed, #c026d3)", width: `${progress * 100}%`, borderRadius: 6, transition: "width 0.3s ease", boxShadow: "0 0 10px #7c3aed60" }} />
+              <div
+                style={{
+                  height: 6,
+                  background: "#10101e",
+                  borderRadius: 6,
+                  overflow: "hidden",
+                }}
+              >
+                <div
+                  style={{
+                    height: "100%",
+                    background: "linear-gradient(90deg,#7c3aed,#c026d3)",
+                    width: `${progress * 100}%`,
+                    borderRadius: 6,
+                    transition: "width 0.2s",
+                    boxShadow: "0 0 10px #7c3aed60",
+                  }}
+                />
               </div>
-              {isWorking && totalScenes > 0 && <div style={{ fontSize: 10, color: "#3a3a5a", marginTop: 5 }}>Scene {currentScene + 1} / {totalScenes} rendering...</div>}
+              {isWorking && totalScenes > 0 && (
+                <div style={{ fontSize: 10, color: "#3a3a5a", marginTop: 4 }}>
+                  Scene {currentScene + 1} / {totalScenes} rendering...
+                </div>
+              )}
             </div>
           )}
 
+          {/* Status */}
           {statusLines.length > 0 && (
-            <div style={{ background: "#07070d", border: "1px solid #10101e", borderRadius: 10, padding: "12px 14px" }}>
+            <div
+              style={{
+                background: "#07070d",
+                border: "1px solid #10101e",
+                borderRadius: 10,
+                padding: "11px 13px",
+              }}
+            >
               {statusLines.map((s, i) => (
-                <div key={i} style={{ fontSize: 11, color: i === statusLines.length - 1 ? "#c084fc" : "#2a2a45", lineHeight: 1.8, animation: "statusIn 0.3s ease", fontFamily: "monospace" }}>{s}</div>
+                <div
+                  key={i}
+                  style={{
+                    fontSize: 11,
+                    color: i === statusLines.length - 1 ? "#c084fc" : "#2a2a40",
+                    lineHeight: 1.9,
+                    animation: "statusIn 0.3s ease",
+                    fontFamily: "monospace",
+                  }}
+                >
+                  {s}
+                </div>
               ))}
             </div>
           )}
 
+          {/* AI Insights */}
           {insights.length > 0 && (
-            <div style={{ background: "#07101b", border: "1px solid #1d3b6e", borderRadius: 10, padding: "12px 14px" }}>
-              <div style={{ fontSize: 10, color: "#60a5fa", textTransform: "uppercase", letterSpacing: 2, marginBottom: 8, fontWeight: 700 }}>AI Related Insights</div>
-              {insights.map((point, i) => (
-                <div key={i} style={{ color: "#bfdbfe", fontSize: 12, lineHeight: 1.65, marginBottom: 6 }}>• {point}</div>
+            <div
+              style={{
+                background: "#07101b",
+                border: "1px solid #1d3b6e",
+                borderRadius: 10,
+                padding: "12px 14px",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 10,
+                  color: "#60a5fa",
+                  textTransform: "uppercase",
+                  letterSpacing: 2,
+                  marginBottom: 8,
+                  fontWeight: 700,
+                }}
+              >
+                💡 AI Related Insights
+              </div>
+              {insights.map((p, i) => (
+                <div
+                  key={i}
+                  style={{
+                    color: "#bfdbfe",
+                    fontSize: 12,
+                    lineHeight: 1.65,
+                    marginBottom: 5,
+                  }}
+                >
+                  • {p}
+                </div>
               ))}
             </div>
           )}
 
+          {/* How it works */}
           {phase === "idle" && !videoUrl && (
-            <div style={{ background: "#07070d", border: "1px solid #10101e", borderRadius: 12, padding: "14px 16px" }}>
-              <div style={{ fontSize: 10, color: "#3a3a5a", textTransform: "uppercase", letterSpacing: 2, marginBottom: 12, fontWeight: 700 }}>Kaise kaam karta hai</div>
-              {[["1","Topic likho","Koi bhi topic — AI ko sab pata hai"],["2","Format choose karo","Short/Reel ya YouTube"],["3","Button dabao","Bas ek click — baaki sab automatic"],["4","Video download karo","CapCut ya editor mein polish karo"]].map(([num, t, d]) => (
-                <div key={num} style={{ display: "flex", gap: 10, marginBottom: 10 }}>
-                  <div style={{ width: 22, height: 22, borderRadius: "50%", background: "#1a0a30", border: "1px solid #3d1f6e", color: "#7c3aed", fontSize: 11, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{num}</div>
+            <div
+              style={{
+                background: "#07070d",
+                border: "1px solid #10101e",
+                borderRadius: 12,
+                padding: "13px 15px",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 10,
+                  color: "#3a3a5a",
+                  textTransform: "uppercase",
+                  letterSpacing: 2,
+                  marginBottom: 11,
+                  fontWeight: 700,
+                }}
+              >
+                Kaise kaam karta hai
+              </div>
+              {[
+                [
+                  "⚡",
+                  "Topic ya script likho",
+                  "English, Urdu, Hindi — sab chalega",
+                ],
+                [
+                  "🎬",
+                  "Format & style choose karo",
+                  "Reel, YouTube, Educational, Motivational",
+                ],
+                ["▶️", "Button dabao", "AI + animation + voice sab automatic"],
+                [
+                  "⬇️",
+                  "Download karo",
+                  "CapCut mein music add karo aur upload!",
+                ],
+              ].map(([ic, t, d]) => (
+                <div
+                  key={t}
+                  style={{ display: "flex", gap: 9, marginBottom: 9 }}
+                >
+                  <span style={{ fontSize: 16, flexShrink: 0 }}>{ic}</span>
                   <div>
-                    <div style={{ fontSize: 12, fontWeight: 700, color: "#c084fc" }}>{t}</div>
-                    <div style={{ fontSize: 11, color: "#3a3a5a", lineHeight: 1.5 }}>{d}</div>
+                    <div
+                      style={{
+                        fontSize: 12,
+                        fontWeight: 700,
+                        color: "#c084fc",
+                      }}
+                    >
+                      {t}
+                    </div>
+                    <div
+                      style={{
+                        fontSize: 11,
+                        color: "#3a3a5a",
+                        lineHeight: 1.5,
+                      }}
+                    >
+                      {d}
+                    </div>
                   </div>
                 </div>
               ))}
@@ -826,46 +1353,216 @@ Rules:
           )}
         </div>
 
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 16, animation: "fadeUp 0.4s ease 0.1s both" }}>
-          <div style={{ background: "#07070d", border: `1.5px solid ${isWorking ? "#3d1f6e" : "#10101e"}`, borderRadius: 16, overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", width: "100%", padding: 12, boxShadow: isWorking ? "0 0 40px #7c3aed20" : "none", transition: "box-shadow 0.5s" }}>
+        {/* RIGHT */}
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            gap: 14,
+            animation: "fadeUp 0.4s ease 0.1s both",
+          }}
+        >
+          <div
+            style={{
+              background: "#07070d",
+              border: `1.5px solid ${isWorking ? "#3d1f6e" : "#10101e"}`,
+              borderRadius: 16,
+              overflow: "hidden",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              width: "100%",
+              padding: 12,
+              boxShadow: isWorking ? "0 0 50px #7c3aed22" : "none",
+              transition: "box-shadow 0.5s",
+            }}
+          >
             <div style={{ position: "relative" }}>
-              <canvas ref={canvasRef} width={activeFormat.w} height={activeFormat.h} style={{ display: "block", width: displayW, height: displayH, borderRadius: 10, background: "#0a0a14" }} />
-              <audio ref={audioElRef} hidden preload="auto" crossOrigin="anonymous" />
+              <canvas
+                ref={canvasRef}
+                width={activeFormat.w}
+                height={activeFormat.h}
+                style={{
+                  display: "block",
+                  width: displayW,
+                  height: displayH,
+                  borderRadius: 10,
+                  background: "#0a0a14",
+                }}
+              />
               {phase === "idle" && !videoUrl && (
-                <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, pointerEvents: "none" }}>
-                  <div style={{ fontSize: 40 }}>🎬</div>
-                  <div style={{ fontSize: 12, color: "#2a2a45", textAlign: "center" }}>Yahan video dikhegi</div>
+                <div
+                  style={{
+                    position: "absolute",
+                    inset: 0,
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 10,
+                    pointerEvents: "none",
+                  }}
+                >
+                  <div style={{ fontSize: 44 }}>🎬</div>
+                  <div
+                    style={{
+                      fontSize: 12,
+                      color: "#2a2a45",
+                      textAlign: "center",
+                      lineHeight: 1.7,
+                    }}
+                  >
+                    Topic likho
+                    <br />
+                    Video yahan live banegi
+                  </div>
                 </div>
               )}
               {phase === "recording" && (
-                <div style={{ position: "absolute", top: 8, right: 8, background: "#ef444499", borderRadius: 20, padding: "3px 10px", fontSize: 10, fontWeight: 800, color: "#fff", display: "flex", alignItems: "center", gap: 5, animation: "recPulse 1s infinite" }}>
-                  <span style={{ width: 6, height: 6, background: "#fff", borderRadius: "50%", display: "inline-block" }} /> REC
+                <div
+                  style={{
+                    position: "absolute",
+                    top: 8,
+                    right: 8,
+                    background: "#ef444488",
+                    backdropFilter: "blur(4px)",
+                    borderRadius: 20,
+                    padding: "3px 10px",
+                    fontSize: 10,
+                    fontWeight: 800,
+                    color: "#fff",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 5,
+                    animation: "recPulse 1s infinite",
+                  }}
+                >
+                  <span
+                    style={{
+                      width: 6,
+                      height: 6,
+                      background: "#fff",
+                      borderRadius: "50%",
+                      display: "inline-block",
+                    }}
+                  />{" "}
+                  REC
                 </div>
               )}
             </div>
           </div>
 
           {isWorking && totalScenes > 0 && (
-            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "center" }}>
+            <div
+              style={{
+                display: "flex",
+                gap: 5,
+                flexWrap: "wrap",
+                justifyContent: "center",
+              }}
+            >
               {Array.from({ length: totalScenes }).map((_, i) => (
-                <div key={i} style={{ width: 8, height: 8, borderRadius: "50%", background: i < currentScene ? "#7c3aed" : i === currentScene ? "#c084fc" : "#10101e", border: i === currentScene ? "1.5px solid #c084fc" : "1.5px solid transparent", transition: "all 0.3s" }} />
+                <div
+                  key={i}
+                  style={{
+                    width: 8,
+                    height: 8,
+                    borderRadius: "50%",
+                    background:
+                      i < currentScene
+                        ? "#7c3aed"
+                        : i === currentScene
+                          ? "#c084fc"
+                          : "#10101e",
+                    border:
+                      i === currentScene
+                        ? "1.5px solid #c084fc"
+                        : "1.5px solid transparent",
+                    transition: "all 0.3s",
+                  }}
+                />
               ))}
             </div>
           )}
 
           {videoTitle && phase !== "idle" && (
-            <div style={{ textAlign: "center", fontSize: 12, color: "#7c3aed", fontWeight: 700, maxWidth: displayW }}>📹 {videoTitle}</div>
+            <div
+              style={{
+                textAlign: "center",
+                fontSize: 12,
+                color: "#7c3aed",
+                fontWeight: 700,
+                maxWidth: displayW,
+                padding: "0 8px",
+              }}
+            >
+              📹 {videoTitle}
+            </div>
           )}
 
           {videoUrl && (
-            <div style={{ width: "100%", background: "#07120a", border: "1px solid #14532d", borderRadius: 14, padding: "16px", animation: "fadeUp 0.4s ease" }}>
-              <div style={{ fontSize: 13, color: "#22c55e", fontWeight: 800, marginBottom: 10, textAlign: "center" }}>🎉 Video Taiyar Hai!</div>
-              <video src={videoUrl} controls style={{ width: "100%", borderRadius: 8, marginBottom: 10, maxHeight: 140, background: "#000" }} />
-              <a href={videoUrl} download={`${topic.slice(0, 25).replace(/\s+/g, "-")}-video.webm`} style={{ display: "block", textAlign: "center", background: "linear-gradient(135deg,#16a34a,#15803d)", color: "#fff", borderRadius: 10, padding: "12px", fontSize: 14, fontWeight: 800, textDecoration: "none", boxShadow: "0 4px 20px #16a34a40" }}>
+            <div
+              style={{
+                width: "100%",
+                background: "#07120a",
+                border: "1px solid #14532d",
+                borderRadius: 14,
+                padding: "16px",
+                animation: "fadeUp 0.4s ease",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 13,
+                  color: "#22c55e",
+                  fontWeight: 800,
+                  marginBottom: 10,
+                  textAlign: "center",
+                }}
+              >
+                🎉 Video Bilkul Taiyar!
+              </div>
+              <video
+                src={videoUrl}
+                controls
+                style={{
+                  width: "100%",
+                  borderRadius: 8,
+                  marginBottom: 10,
+                  maxHeight: 160,
+                  background: "#000",
+                }}
+              />
+              <a
+                href={videoUrl}
+                download={`${(topic || "video").slice(0, 25).replace(/\s+/g, "-")}-video.webm`}
+                style={{
+                  display: "block",
+                  textAlign: "center",
+                  background: "linear-gradient(135deg,#16a34a,#15803d)",
+                  color: "#fff",
+                  borderRadius: 10,
+                  padding: "13px",
+                  fontSize: 14,
+                  fontWeight: 800,
+                  textDecoration: "none",
+                  boxShadow: "0 4px 20px #16a34a44",
+                }}
+              >
                 ⬇️ Download Video (.webm)
               </a>
-              <div style={{ fontSize: 10, color: "#166534", marginTop: 8, textAlign: "center", lineHeight: 1.6 }}>
-                Captions included hain. Voice preview mein sunai degi, lekin browser limits ki wajah se downloaded .webm kabhi silent ho sakti hai.
+              <div
+                style={{
+                  fontSize: 10,
+                  color: "#166534",
+                  marginTop: 8,
+                  textAlign: "center",
+                  lineHeight: 1.7,
+                }}
+              >
+                💡 CapCut mein import karo → music/voice add karo → social media
+                pe upload!
               </div>
             </div>
           )}
