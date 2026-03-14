@@ -10,12 +10,15 @@ This app generates scene plans and records short videos from a topic prompt.
 npm install
 ```
 
-2. Create `.env` file in project root and add one of these keys:
+2. Provide OpenRouter API key (any one method):
+
+- **Recommended (no restart):** App UI me `OPENROUTER KEY` field me valid key (`sk-or-v1-...`) paste karo aur **Save key** dabao.
+- **Alternative (.env):** project root me `.env` file bana ke set karo:
 
 ```bash
-VITE_OPENROUTER_API_KEY=your_openrouter_key
+VITE_OPENROUTER_API_KEY=sk-or-v1-your_real_key
 # optional fallback
-VITE_ANTHROPIC_API_KEY=your_openrouter_key
+VITE_ANTHROPIC_API_KEY=sk-or-v1-your_real_key
 ```
 
 3. Start dev server:
